@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to EVC-net",
+        "description": "Enter your EVC-net (Last Mile Solutions) account credentials.",
+        "data": {
+          "base_url": "Portal URL (e.g., https://50five-snl.evc-net.com)",
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure EVC-net",
+        "description": "Update your credentials for {username}. Leave the password blank to keep the current one.",
+        "data": {
+          "base_url": "Portal URL",
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password",
+      "cannot_connect": "Cannot connect to EVC-net",
+      "invalid_url": "Invalid URL format. Use http:// or https://",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This account is already configured",
+      "reconfigure_successful": "Reconfiguration successful"
+    }
+  },
+  "entity": {
+    "button": {
+      "soft_reset": {
+        "name": "Soft Reset"
+      },
+      "hard_reset": {
+        "name": "Hard Reset"
+      },
+      "unlock_connector": {
+        "name": "Unlock Connector"
+      },
+      "block_charging": {
+        "name": "Block Charging"
+      },
+      "unblock_charging": {
+        "name": "Unblock Charging"
+      }
+    },
+    "select": {
+      "active_card": {
+        "name": "Active Card"
+      }
+    },
+    "sensor": {
+      "connector": {
+        "name": "Connector"
+      },
+      "current_power": {
+        "name": "Current Power"
+      },
+      "session_energy": {
+        "name": "Session Energy"
+      },
+      "session_time": {
+        "name": "Session Time"
+      },
+      "status": {
+        "name": "Status"
+      },
+      "status_code": {
+        "name": "Status Code"
+      },
+      "total_energy_usage": {
+        "name": "Total Energy Usage"
+      }
+    }
+  }
+}

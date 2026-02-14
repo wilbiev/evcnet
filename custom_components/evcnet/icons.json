@@ -1,0 +1,49 @@
+{
+  "entity": {
+    "button": {
+      "soft_reset": {
+        "default": "mdi:restart"
+      },
+      "hard_reset": {
+        "default": "mdi:power-cycle"
+      },
+      "unlock_connector": {
+        "default": "mdi:lock-open-variant"
+      },
+      "block_charging": {
+        "default": "mdi:cancel"
+      },
+      "unblock_charging": {
+        "default": "mdi:check-circle"
+      }
+    },
+    "select": {
+      "active_card": {
+        "default": "mdi:card-account-details"
+      }
+    },
+    "sensor": {
+      "connector": {
+        "default": "mdi:connection"
+      },
+      "current_power": {
+        "default": "mdi:lightning-bolt"
+      },
+      "session_energy": {
+        "default": "mdi:battery-charging"
+      },
+      "session_time": {
+        "default": "mdi:timer"
+      },
+      "status": {
+        "default": "mdi:information-outline"
+      },
+      "status_code": {
+        "default": "mdi:information"
+      },
+      "total_energy_usage": {
+        "default": "mdi:flash"
+      }
+    }
+  }
+}
