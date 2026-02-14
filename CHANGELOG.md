@@ -2,38 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2025-12-10
+
+### Improvements
+
+- Full code mordenization
+- Introduce data models and use of entry.runtime_data
+- Automatic retrieval of all card and customer_id's
+- Removal of duplicate attributes to multiple sensor
+- Simplified config_flow and service setup
+
+### Added
+
+- Select entity to select card_id
+
+### Fixed
+
+- Locale-aware parsing of total_energy_usage with proper unit conversion
+- Add CONFIG_SCHEMA to satisfy hassfest validation
+
 ## [0.2.1] - 2025-12-10
 
 ### Fixed
+
 - Locale-aware parsing of total_energy_usage with proper unit conversion
 - Add CONFIG_SCHEMA to satisfy hassfest validation
 
 ## [0.2.0] - 2025-12-09
 
 ### Added
+
 - Button entities for charging spot control: soft & hard reset, unlock connector, block & unblock (#8, @nikagl)
 
 ### Fixed
+
 - Respect SERVERID cookie from evcnet to maintain session persistence after Home Assistant restart (#11, @fredericvl)
 
 ## [0.1.0] - 2025-11-13
 
 ### Added
+
 - Action call `evcnet.start_charging` which supports an optional `card_id` parameter
 - Changelog
 
 ## [0.0.10] - 2025-10-24
 
 ### Fixed
+
 - Release workflow write permissions
 
 ## [0.0.9] - 2025-10-24
 
 ### Added
+
 - GitHub Actions release workflow
 - GitHub Actions validate workflow
 
 ### Fixed
+
 - Default value for total_energy_usage should be an integer
 - Translations placement for reconfigure flow
 - Manifest keys sorting
@@ -41,39 +67,47 @@ All notable changes to this project will be documented in this file.
 ## [0.0.8] - 2025-10-22
 
 ### Changed
+
 - Removed autodetect customer_id logic
 
 ## [0.0.7] - 2025-10-22
 
 ### Changed
+
 - Improved logging consistency
 - Removed unnecessary fallback logic
 
 ### Fixed
+
 - Update entity state on failed charging transactions
 - Default channel is 1
 
 ## [0.0.6] - 2025-10-22
 
 ### Changed
+
 - Refactored constants, switch is_on and extra_state_attributes logic
 
 ## [0.0.5] - 2025-10-21
 
 ### Changed
+
 - Use hours (decimal) instead of minutes for session time
 - Improved logging
 
 ### Fixed
+
 - Switch logic after renaming 'overview' to 'status'
 - Password logging removed
 
 ## [0.0.4] - 2025-10-21
 
 ### Added
+
 - Disclaimer to README
 
 ### Fixed
+
 - Properly parse transaction time
 - Deprecation warnings and error handling
 - Configuration validation on setup
@@ -81,20 +115,24 @@ All notable changes to this project will be documented in this file.
 ## [0.0.3] - 2025-10-21
 
 ### Fixed
+
 - Deprecation warnings in reconfigure flow
 
 ## [0.0.2] - 2025-10-21
 
 ### Added
+
 - Options flow for updating card ID and customer ID
 - Translation support
 
 ### Changed
+
 - Removed unused constants
 
 ## [0.0.1] - 2025-10-21
 
 ### Added
+
 - Initial release
 - Sensor platform for monitoring charging status
 - Switch platform for starting/stopping charging sessions
