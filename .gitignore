@@ -1,53 +1,43 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# artifacts
+__pycache__
+.pytest*
+*.egg-info
+*/build/*
+*/dist/*
+.venv
 
-# C extensions
-*.so
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
-
-# macOS
-.DS_Store
-
-# vim
-*.swp
-*.swo
-*~
-
-# Emacs
-*~
-\#*\#
-
-# Testing
-.pytest_cache/
+# misc
 .coverage
-htmlcov/
+.vscode
+coverage.xml
+.ruff_cache
+uv.lock
+scripts/translations/*
+build/*
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# Home Assistant configuration
+config/*
+!config/configuration.yaml
+
+# Home Assistant database and logs
+*.db
+*.db-shm
+*.db-wal
+*.log
+home-assistant.log*
+home-assistant_v2.db*
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Tuya Hombli
+custom_components/*
+/evcnet
+evcnet/
+!custom_components/evcnet
+custom_components/evcnet/__pycache__
+custom_components/evcnet/.installed

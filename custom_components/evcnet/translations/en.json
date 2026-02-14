@@ -3,51 +3,78 @@
     "step": {
       "user": {
         "title": "Connect to EVC-net",
-        "description": "Enter your EVC-net account credentials",
+        "description": "Enter your EVC-net (Last Mile Solutions) account credentials.",
         "data": {
-          "base_url": "Base URL",
+          "base_url": "Portal URL (e.g., https://50five-snl.evc-net.com)",
           "username": "Email",
           "password": "Password"
         }
       },
-      "card_config": {
-        "title": "Card Configuration (Optional)",
-        "description": "Provide your RFID card ID to enable remote start/stop of charging sessions. You can leave this blank and it will be auto-detected from your next charging session.",
-        "data": {
-          "card_id": "RFID Card ID",
-          "customer_id": "Customer ID (optional)"
-        }
-      },
       "reconfigure": {
         "title": "Reconfigure EVC-net",
-        "description": "Update your EVC-net connection credentials. Leave password blank to keep current password.",
+        "description": "Update your credentials for {username}. Leave the password blank to keep the current one.",
         "data": {
-          "base_url": "Base URL",
+          "base_url": "Portal URL",
           "username": "Email",
-          "password": "Password (leave blank to keep current)"
+          "password": "Password"
         }
       }
     },
     "error": {
       "invalid_auth": "Invalid username or password",
       "cannot_connect": "Cannot connect to EVC-net",
-      "invalid_url": "Invalid URL format. Please enter a valid URL starting with http:// or https://",
+      "invalid_url": "Invalid URL format. Use http:// or https://",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
       "already_configured": "This account is already configured",
-      "reconfigure_successful": "Configuration updated successfully"
+      "reconfigure_successful": "Reconfiguration successful"
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "EVC-net Options",
-        "description": "Update your RFID card ID and customer ID. These are used to start charging sessions remotely. Leave blank to use auto-detected values.",
-        "data": {
-          "card_id": "RFID Card ID",
-          "customer_id": "Customer ID (optional)"
-        }
+  "entity": {
+    "button": {
+      "soft_reset": {
+        "name": "Soft Reset"
+      },
+      "hard_reset": {
+        "name": "Hard Reset"
+      },
+      "unlock_connector": {
+        "name": "Unlock Connector"
+      },
+      "block_charging": {
+        "name": "Block Charging"
+      },
+      "unblock_charging": {
+        "name": "Unblock Charging"
+      }
+    },
+    "select": {
+      "active_card": {
+        "name": "Active Card"
+      }
+    },
+    "sensor": {
+      "connector": {
+        "name": "Connector"
+      },
+      "current_power": {
+        "name": "Current Power"
+      },
+      "session_energy": {
+        "name": "Session Energy"
+      },
+      "session_time": {
+        "name": "Session Time"
+      },
+      "status": {
+        "name": "Status"
+      },
+      "status_code": {
+        "name": "Status Code"
+      },
+      "total_energy_usage": {
+        "name": "Total Energy Usage"
       }
     }
   }

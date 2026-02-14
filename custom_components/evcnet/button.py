@@ -1,98 +1,123 @@
 """Button platform for EVC-net."""
-import asyncio
-import logging
-from typing import Any
 
-from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
+import asyncio
+from dataclasses import dataclass
+import logging
+
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from . import EvcNetConfigEntry, EvcNetException
 from .coordinator import EvcNetCoordinator
+from .entity import EvcNetEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, kw_only=True)
+class EvcNetButtonEntityDescription(ButtonEntityDescription):
+    """Describes EVC-net sensor entity."""
+
+    command: str
+
+
+BUTTON_TYPES: tuple[EvcNetButtonEntityDescription, ...] = (
+    EvcNetButtonEntityDescription(
+        key="soft_reset",
+        translation_key="soft_reset",
+        command="soft_reset",
+    ),
+    EvcNetButtonEntityDescription(
+        key="hard_reset",
+        translation_key="hard_reset",
+        command="hard_reset",
+    ),
+    EvcNetButtonEntityDescription(
+        key="unlock_connector",
+        translation_key="unlock_connector",
+        command="unlock_connector",
+    ),
+    EvcNetButtonEntityDescription(
+        key="block_charging",
+        translation_key="block_charging",
+        command="block",
+    ),
+    EvcNetButtonEntityDescription(
+        key="unblock_charging",
+        translation_key="unblock_charging",
+        command="unblock",
+    ),
+    EvcNetButtonEntityDescription(
+        key="poll_now",
+        translation_key="poll_now",
+        command="get_spot_overview",
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EvcNetConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up EVC-net buttons."""
-    coordinator: EvcNetCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up EVC-net sensors."""
+    coordinator = entry.runtime_data.coordinator
 
-    entities = []
-
-    for spot_id in coordinator.data:
-        # Add button entities for each charging spot
-        entities.extend([
-            EvcNetSoftResetButton(coordinator, spot_id),
-            EvcNetHardResetButton(coordinator, spot_id),
-            EvcNetUnlockConnectorButton(coordinator, spot_id),
-            EvcNetBlockButton(coordinator, spot_id),
-            EvcNetUnblockButton(coordinator, spot_id),
-        ])
-
-    async_add_entities(entities)
+    async_add_entities(
+        EvcNetButton(
+            coordinator,
+            description,
+            spot_id,
+        )
+        for spot_id in coordinator.data
+        for description in BUTTON_TYPES
+    )
 
 
-class EvcNetButtonBase(CoordinatorEntity[EvcNetCoordinator], ButtonEntity):
+class EvcNetButton(EvcNetEntity, ButtonEntity):
     """Base class for EVC-net button entities."""
+
+    entity_description: EvcNetButtonEntityDescription
 
     def __init__(
         self,
         coordinator: EvcNetCoordinator,
+        description: EvcNetButtonEntityDescription,
         spot_id: str,
-        button_type: str,
-        name_suffix: str,
-        icon: str,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._spot_id = spot_id
-        self._button_type = button_type
-        self._attr_unique_id = f"{spot_id}_{button_type}"
-        self._attr_icon = icon
-
-        # Get spot info from coordinator data
-        spot_info = coordinator.data.get(spot_id, {}).get("info", {})
-
-        # Use NAME field, or fallback to spot ID
-        spot_name = spot_info.get("NAME")
-        if not spot_name or spot_name.strip() == "":
-            spot_name = f"Charge Spot {spot_id}"
-
-        self._attr_name = f"{spot_name} {name_suffix}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, spot_id)},
-            "name": spot_name,
-            "manufacturer": "Last Mile Solutions",
-            "model": "EVC-net Charging Station",
-            "sw_version": spot_info.get("SOFTWARE_VERSION"),
-        }
+        super().__init__(coordinator, spot_id)
+        self.entity_description = description
+        self._attr_unique_id = f"{spot_id}_{description.key}_button"
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self._spot_id in self.coordinator.data
+        return (
+            super().available
+            and self.coordinator.data is not None
+            and self._spot_id in self.coordinator.data
+        )
 
-    async def _execute_action(self, action_method) -> None:
-        """Execute the button action."""
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        spot_data = self.coordinator.data.get(self._spot_id)
+        if not spot_data:
+            _LOGGER.error("Action failed: no data for spot %s", self._spot_id)
+            return
+
+        channel = str(spot_data.info.get("CHANNEL", "1"))
+        api_method_name = self.entity_description.command
+
+        # Get the method dynamically from the client
+        api_method = getattr(self.coordinator.client, api_method_name)
+
         try:
-            spot_data = self.coordinator.data.get(self._spot_id, {})
-            spot_info = spot_data.get("info", {})
-            channel = str(spot_info.get("CHANNEL", "1"))
-
             _LOGGER.info(
-                "Executing %s on spot %s, channel %s",
-                self._button_type,
-                self._spot_id,
-                channel
+                "Executing action %s on spot %s", api_method_name, self._spot_id
             )
-
-            await action_method(self._spot_id, channel)
+            await api_method(self._spot_id, channel)
 
             # Wait for the action to take effect
             await asyncio.sleep(3)
@@ -100,97 +125,6 @@ class EvcNetButtonBase(CoordinatorEntity[EvcNetCoordinator], ButtonEntity):
             # Force a refresh to get the new state
             await self.coordinator.async_request_refresh()
 
-        except Exception as err:
-            _LOGGER.error("Failed to execute %s: %s", self._button_type, err, exc_info=True)
-            # Force refresh even on error
-            await self.coordinator.async_request_refresh()
-
-
-class EvcNetSoftResetButton(EvcNetButtonBase):
-    """Button to perform a soft reset on the charging station."""
-
-    def __init__(self, coordinator: EvcNetCoordinator, spot_id: str) -> None:
-        """Initialize the soft reset button."""
-        super().__init__(
-            coordinator,
-            spot_id,
-            "soft_reset",
-            "Soft Reset",
-            "mdi:restart"
-        )
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        await self._execute_action(self.coordinator.client.soft_reset)
-
-
-class EvcNetHardResetButton(EvcNetButtonBase):
-    """Button to perform a hard reset on the charging station."""
-
-    def __init__(self, coordinator: EvcNetCoordinator, spot_id: str) -> None:
-        """Initialize the hard reset button."""
-        super().__init__(
-            coordinator,
-            spot_id,
-            "hard_reset",
-            "Hard Reset",
-            "mdi:restart-alert"
-        )
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        await self._execute_action(self.coordinator.client.hard_reset)
-
-
-class EvcNetUnlockConnectorButton(EvcNetButtonBase):
-    """Button to unlock the connector on the charging station."""
-
-    def __init__(self, coordinator: EvcNetCoordinator, spot_id: str) -> None:
-        """Initialize the unlock connector button."""
-        super().__init__(
-            coordinator,
-            spot_id,
-            "unlock_connector",
-            "Unlock Connector",
-            "mdi:lock-open-variant"
-        )
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        await self._execute_action(self.coordinator.client.unlock_connector)
-
-
-class EvcNetBlockButton(EvcNetButtonBase):
-    """Button to block the charging station."""
-
-    def __init__(self, coordinator: EvcNetCoordinator, spot_id: str) -> None:
-        """Initialize the block button."""
-        super().__init__(
-            coordinator,
-            spot_id,
-            "block",
-            "Block",
-            "mdi:cancel"
-        )
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        await self._execute_action(self.coordinator.client.block)
-
-
-class EvcNetUnblockButton(EvcNetButtonBase):
-    """Button to unblock the charging station."""
-
-    def __init__(self, coordinator: EvcNetCoordinator, spot_id: str) -> None:
-        """Initialize the unblock button."""
-        super().__init__(
-            coordinator,
-            spot_id,
-            "unblock",
-            "Unblock",
-            "mdi:check-circle"
-        )
-
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        await self._execute_action(self.coordinator.client.unblock)
+        except EvcNetException as err:
+            _LOGGER.error("Error executing action %s: %s", api_method_name, err)
+            raise

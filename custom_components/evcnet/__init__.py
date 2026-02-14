@@ -1,14 +1,18 @@
 """The EVC-net integration."""
-import asyncio
+
+from dataclasses import dataclass
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv, entity_registry as er, service
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+    service,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.typing import ConfigType
 
 from .api import EvcNetApiClient
 from .const import CONF_BASE_URL, DOMAIN
@@ -16,199 +20,47 @@ from .coordinator import EvcNetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.BUTTON]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
+
+
+class EvcNetException(Exception):
+    """Base exception for EVC-net."""
+
+
+@dataclass
+class EvcNetData:
+    """Define an object to hold EVC-net data."""
+
+    coordinator: EvcNetCoordinator
+
+
+type EvcNetConfigEntry = ConfigEntry[EvcNetData]
 
 # This integration can only be set up from config entries, not from YAML
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up is called when Home Assistant is loading our component."""
-
-    async def async_handle_start_charging(call: ServiceCall) -> None:
-        """Handle the start_charging action call."""
-        # Use service helper to expand target (handles services.yaml target resolution)
-        # This properly expands entity_id from target, device, area, etc.
-        entity_ids = await service.async_extract_entity_ids(call)
-
-        card_id = call.data.get("card_id")
-
-        if not entity_ids:
-            _LOGGER.error(
-                "Action start_charging requires entity_id. "
-                "Received call data: %s",
-                call.data
-            )
-            return
-
-        # Process each entity
-        for entity_id in entity_ids:
-            # Only process switch entities (ignore sensors when device/area is selected)
-            if not entity_id.startswith("switch."):
-                continue
-
-            # Get the entity registry to find which config entry this entity belongs to
-            entity_registry = er.async_get(hass)
-            entity_entry = entity_registry.async_get(entity_id)
-
-            if not entity_entry:
-                _LOGGER.error("Entity %s not found", entity_id)
-                continue
-
-            # Find the coordinator for this entity's config entry
-            config_entry_id = entity_entry.config_entry_id
-            if not config_entry_id or config_entry_id not in hass.data.get(DOMAIN, {}):
-                _LOGGER.error("Could not find coordinator for entity %s", entity_id)
-                continue
-
-            coordinator = hass.data[DOMAIN][config_entry_id]
-
-            # Extract spot_id from unique_id (format: {spot_id}_charging)
-            unique_id = entity_entry.unique_id
-            if not unique_id or not unique_id.endswith("_charging"):
-                _LOGGER.debug("Skipping entity %s (not a charging switch): %s", entity_id, unique_id)
-                continue
-
-            # Get the entity from stored references
-            entities_dict = getattr(coordinator, "entities", {})
-            switch_entity = entities_dict.get(unique_id)
-
-            if switch_entity and hasattr(switch_entity, 'async_turn_on'):
-                # Call the entity's method directly with card_id
-                await switch_entity.async_turn_on(card_id=card_id)
-            else:
-                _LOGGER.error("Could not find switch entity %s (unique_id: %s)", entity_id, unique_id)
-
-    async def async_handle_charging_action(call: ServiceCall, action_name: str) -> None:
-        """Handle charging station actions (soft_reset, hard_reset, unlock_connector, block, unblock)."""
-        entity_ids = await service.async_extract_entity_ids(call)
-
-        if not entity_ids:
-            _LOGGER.error(
-                "Action %s requires entity_id. Received call data: %s",
-                action_name,
-                call.data
-            )
-            return
-
-        # Process each entity
-        for entity_id in entity_ids:
-            # Only process switch entities
-            if not entity_id.startswith("switch."):
-                continue
-
-            # Get the entity registry to find which config entry this entity belongs to
-            entity_registry = er.async_get(hass)
-            entity_entry = entity_registry.async_get(entity_id)
-
-            if not entity_entry:
-                _LOGGER.error("Entity %s not found", entity_id)
-                continue
-
-            # Find the coordinator for this entity's config entry
-            config_entry_id = entity_entry.config_entry_id
-            if not config_entry_id or config_entry_id not in hass.data.get(DOMAIN, {}):
-                _LOGGER.error("Could not find coordinator for entity %s", entity_id)
-                continue
-
-            coordinator = hass.data[DOMAIN][config_entry_id]
-
-            # Extract spot_id from unique_id (format: {spot_id}_charging)
-            unique_id = entity_entry.unique_id
-            if not unique_id or not unique_id.endswith("_charging"):
-                _LOGGER.debug("Skipping entity %s (not a charging switch): %s", entity_id, unique_id)
-                continue
-
-            spot_id = unique_id.replace("_charging", "")
-
-            # Get channel from coordinator data
-            spot_data = coordinator.data.get(spot_id, {})
-            spot_info = spot_data.get("info", {})
-            channel = str(spot_info.get("CHANNEL", "1"))
-
-            try:
-                _LOGGER.info("Performing %s on spot %s, channel %s", action_name, spot_id, channel)
-
-                # Call the appropriate API method
-                if action_name == "soft_reset":
-                    await coordinator.client.soft_reset(spot_id, channel)
-                elif action_name == "hard_reset":
-                    await coordinator.client.hard_reset(spot_id, channel)
-                elif action_name == "unlock_connector":
-                    await coordinator.client.unlock_connector(spot_id, channel)
-                elif action_name == "block":
-                    await coordinator.client.block(spot_id, channel)
-                elif action_name == "unblock":
-                    await coordinator.client.unblock(spot_id, channel)
-
-                # Wait for the action to take effect
-                await asyncio.sleep(3)
-
-                # Refresh coordinator data
-                await coordinator.async_request_refresh()
-
-            except Exception as err:
-                _LOGGER.error("Failed to perform %s: %s", action_name, err, exc_info=True)
-                # Force refresh even on error
-                await coordinator.async_request_refresh()
-
-    # Register the actions - Home Assistant will load schema from services.yaml
-    hass.services.async_register(
-        DOMAIN,
-        "start_charging",
-        async_handle_start_charging,
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "soft_reset",
-        lambda call: async_handle_charging_action(call, "soft_reset"),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "hard_reset",
-        lambda call: async_handle_charging_action(call, "hard_reset"),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "unlock_connector",
-        lambda call: async_handle_charging_action(call, "unlock_connector"),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "block",
-        lambda call: async_handle_charging_action(call, "block"),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "unblock",
-        lambda call: async_handle_charging_action(call, "unblock"),
-    )
-
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bool:
     """Set up EVC-net from a config entry."""
+
     # Validate required configuration
-    required_keys = [CONF_BASE_URL, CONF_USERNAME, CONF_PASSWORD]
-    missing_keys = [key for key in required_keys if key not in entry.data]
+    for key in [CONF_BASE_URL, CONF_USERNAME, CONF_PASSWORD]:
+        if key not in entry.data:
+            _LOGGER.error(
+                "Missing required configuration keys: %s. "
+                "Please delete and re-add the integration: "
+                "Settings > Devices & Services > EVC-net > Delete",
+                key,
+            )
+            return False
 
-    if missing_keys:
-        _LOGGER.error(
-            "Missing required configuration keys: %s. "
-            "Please delete and re-add the integration: "
-            "Settings > Devices & Services > EVC-net > Delete",
-            missing_keys
-        )
-        return False
-
+    # Initialize API Client & Coordinator
     session = async_get_clientsession(hass)
-
     client = EvcNetApiClient(
         entry.data[CONF_BASE_URL],
         entry.data[CONF_USERNAME],
@@ -218,19 +70,65 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = EvcNetCoordinator(hass, client)
 
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        raise ConfigEntryNotReady(f"Verblijding met EVC-net mislukt: {err}") from err
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.runtime_data = EvcNetData(coordinator=coordinator)
 
+    # Register the services (only the first time the integration is set up)
+    setup_services(hass)
+
+    # Start platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+def setup_services(hass: HomeAssistant) -> None:
+    """Registreer EVC-net services."""
+    if hass.services.has_service(DOMAIN, "start_charging"):
+        return
 
-    return unload_ok
+    async def handle_start_charging(call: ServiceCall) -> None:
+        """Service to start a charging session (supports an optional RFID card ID)."""
+        entity_ids = await service.async_extract_entity_ids(call)
+        card_id_override = call.data.get("card_id")
+
+        registry = er.async_get(hass)
+        for entity_id in entity_ids:
+            entity_entry = registry.async_get(entity_id)
+            if not entity_entry or not entity_entry.config_entry_id:
+                continue
+
+            # Haal de entry op via de registry
+            entry: EvcNetConfigEntry | None = hass.config_entries.async_get_entry(
+                entity_entry.config_entry_id
+            )
+            if not entry or not hasattr(entry, "runtime_data"):
+                continue
+
+            coordinator = entry.runtime_data.coordinator
+            # Haal spot_id uit unique_id (bijv. "12345_charging_switch")
+            spot_id = entity_entry.unique_id.split("_")[0]
+            spot_data = coordinator.data.get(spot_id)
+
+            if spot_data:
+                # Prioriteit: 1. Service call card_id, 2. Geselecteerde kaart in UI
+                card_id = card_id_override or spot_data.selected_card_id
+                customer_id = spot_data.customer_id
+                channel = str(spot_data.info.get("CHANNEL", "1"))
+
+                if card_id and customer_id:
+                    await coordinator.client.start_charging(
+                        spot_id, customer_id, card_id, channel
+                    )
+                    await coordinator.async_request_refresh()
+
+    hass.services.async_register(DOMAIN, "start_charging", handle_start_charging)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

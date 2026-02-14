@@ -1,11 +1,13 @@
 """API client for EVC-net charging stations."""
+
 import json
 import logging
 from typing import Any
-from urllib.parse import quote
 
 import aiohttp
+from yarl import URL
 
+from . import EvcNetException
 from .const import AJAX_ENDPOINT, LOGIN_ENDPOINT
 
 _LOGGER = logging.getLogger(__name__)
@@ -14,7 +16,13 @@ _LOGGER = logging.getLogger(__name__)
 class EvcNetApiClient:
     """API client for EVC-net."""
 
-    def __init__(self, base_url: str, username: str, password: str, session: aiohttp.ClientSession) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        session: aiohttp.ClientSession,
+    ) -> None:
         """Initialize the API client."""
         self.base_url = base_url.rstrip("/")
         self.username = username
@@ -38,20 +46,20 @@ class EvcNetApiClient:
             async with self.session.post(
                 url,
                 data=data,
-                allow_redirects=False  # Don't follow redirects
+                allow_redirects=False,  # Don't follow redirects
             ) as response:
                 _LOGGER.debug("Login response status: %s", response.status)
 
                 # Login returns 302 redirect
                 if response.status == 302:
                     # Only method that works with multiple cookies: From cookie jar (HASS session has cookie support)
-                    if hasattr(self.session, 'cookie_jar'):
-                        cookies = self.session.cookie_jar.filter_cookies(self.base_url)
+                    if hasattr(self.session, "cookie_jar"):
+                        cookies = self.session.cookie_jar.filter_cookies(URL(self.base_url))
                         for cookie in cookies.values():
-                            if cookie.key == 'PHPSESSID':
+                            if cookie.key == "PHPSESSID":
                                 self._phpsessid = cookie.value
                                 _LOGGER.debug("Found PHPSESSID in cookie jar")
-                            if cookie.key == 'SERVERID':
+                            if cookie.key == "SERVERID":
                                 self._serverid = cookie.value
                                 _LOGGER.debug("Found SERVERID in cookie jar")
 
@@ -64,104 +72,127 @@ class EvcNetApiClient:
                     _LOGGER.error("No PHPSESSID found in any location")
                     _LOGGER.debug("All response headers: %s", dict(response.headers))
                     return False
-                else:
-                    _LOGGER.error("Authentication failed with status %s (expected 302)", response.status)
-                    response_text = await response.text()
-                    _LOGGER.debug("Response: %s", response_text[:200])
-                    return False
+
+                _LOGGER.error(
+                    "Authentication failed with status %s (expected 302)",
+                    response.status,
+                )
+                response_text = await response.text()
+                _LOGGER.debug("Response: %s", response_text[:200])
+                return False
+
         except aiohttp.ClientError as err:
             _LOGGER.error("Error during authentication: %s", err)
             return False
-        except Exception as err:
-            _LOGGER.error("Unexpected error during authentication: %s", err, exc_info=True)
+        except EvcNetException as err:
+            _LOGGER.error("Unexpected error during authentication: %s", err)
             return False
 
     async def _make_ajax_request(self, requests_payload: dict) -> dict[str, Any]:
         """Make an AJAX request to the EVC-net API."""
+
         if not self._is_authenticated:
             if not await self.authenticate():
-                raise Exception("Failed to authenticate")
+                raise EvcNetException("Failed to authenticate")
 
         url = f"{self.base_url}{AJAX_ENDPOINT}"
 
         # Prepare headers with cookie
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
         cookies = {
             "PHPSESSID": self._phpsessid,
-            "SERVERID": self._serverid if self._serverid else ""
+            "SERVERID": self._serverid if self._serverid else "",
         }
 
         # Convert requests payload to JSON string and send as form data
-        data = {
-            "requests": json.dumps(requests_payload)
-        }
+        data = {"requests": json.dumps(requests_payload)}
 
         try:
             # Make request with explicit cookie header
-            async with self.session.post(url, headers=headers, cookies=cookies, data=data) as response:
+            async with self.session.post(
+                url,
+                headers=headers,
+                cookies=cookies,
+                data=data,
+                timeout=aiohttp.ClientTimeout(
+                    total=15
+                ),  # Force a timeout after 15 seconds
+            ) as response:
                 # Check content type before trying to parse JSON
-                content_type = response.headers.get('Content-Type', '')
+                content_type = response.headers.get("Content-Type", "")
 
                 if response.status == 200:
-                    if 'application/json' in content_type or 'text/html' in content_type:
+                    if (
+                        "application/json" in content_type
+                        or "text/html" in content_type
+                    ):
                         # Try to parse as JSON first
                         try:
                             response_text = await response.text()
 
                             # Check if response looks like JSON
-                            if response_text.strip().startswith('[') or response_text.strip().startswith('{'):
+                            if response_text.strip().startswith(
+                                "["
+                            ) or response_text.strip().startswith("{"):
                                 return json.loads(response_text)
-                            else:
-                                # It's HTML, session expired
-                                _LOGGER.warning(
-                                    "Received HTML instead of JSON (status %s, content-type: %s), "
-                                    "session likely expired. Re-authenticating...",
-                                    response.status,
-                                    content_type
-                                )
-                                self._is_authenticated = False
 
-                                # Try to re-authenticate
-                                if await self.authenticate():
-                                    # Retry the request once
-                                    return await self._make_ajax_request(requests_payload)
+                            # It's HTML, session expired
+                            _LOGGER.warning(
+                                "Received HTML instead of JSON (status %s, content-type: %s), "
+                                "session likely expired. Re-authenticating...",
+                                response.status,
+                                content_type,
+                            )
+                            self._is_authenticated = False
 
-                                raise Exception("Re-authentication failed or still getting HTML response")
+                            # Try to re-authenticate
+                            if await self.authenticate():
+                                # Retry the request once
+                                return await self._make_ajax_request(requests_payload)
+
+                            raise EvcNetException(
+                                "Re-authentication failed or still getting HTML response"
+                            )
                         except json.JSONDecodeError as err:
                             _LOGGER.error("Failed to decode JSON response: %s", err)
                             _LOGGER.debug("Response text: %s", response_text[:500])
                             raise
                     else:
-                        raise Exception(f"Unexpected content type: {content_type}")
+                        raise EvcNetException(
+                            f"Unexpected content type: {content_type}"
+                        )
 
                 elif response.status in [401, 302]:
                     # Session expired, re-authenticate
-                    _LOGGER.info("Session expired (status %s), re-authenticating", response.status)
+                    _LOGGER.info(
+                        "Session expired (status %s), re-authenticating",
+                        response.status,
+                    )
                     self._is_authenticated = False
                     if await self.authenticate():
                         # Retry the request
                         return await self._make_ajax_request(requests_payload)
-                    raise Exception("Re-authentication failed")
+                    raise EvcNetException("Re-authentication failed")
                 else:
                     response_text = await response.text()
                     _LOGGER.error(
                         "Request failed with status %s, response: %s",
                         response.status,
-                        response_text[:200]
+                        response_text[:200],
                     )
-                    raise Exception(f"Request failed with status {response.status}")
-        except aiohttp.ClientTimeout as err:
+                    raise EvcNetException(
+                        f"Request failed with status {response.status}"
+                    )
+        except TimeoutError as err:
             _LOGGER.error("Request timeout: %s", err)
-            raise Exception("Request timeout") from err
+            raise EvcNetException("Request timeout") from err
         except aiohttp.ClientConnectorError as err:
             _LOGGER.error("Connection error: %s", err)
-            raise Exception("Cannot connect to EVC-net") from err
+            raise EvcNetException("Cannot connect to EVC-net") from err
         except aiohttp.ClientError as err:
             _LOGGER.error("HTTP client error: %s", err)
-            raise Exception(f"HTTP error: {err}") from err
+            raise EvcNetException(f"HTTP error: {err}") from err
 
     async def get_charge_spots(self) -> dict[str, Any]:
         """Get list of charging spots."""
@@ -169,25 +200,25 @@ class EvcNetApiClient:
             "0": {
                 "handler": "\\LMS\\EV\\AsyncServices\\DashboardAsyncService",
                 "method": "networkOverview",
-                "params": {
-                    "mode": "id"
-                }
+                "params": {"mode": "id"},
             }
         }
 
         return await self._make_ajax_request(requests_payload)
 
-    async def get_spot_total_energy_usage(self, recharge_spot_id: str) -> dict[str, Any]:
+    async def get_spot_total_energy_usage(
+        self, recharge_spot_id: str
+    ) -> dict[str, Any]:
         """Get total energy usage of a specific charging spot."""
         requests_payload = {
             "0": {
                 "handler": "\\LMS\\EV\\AsyncServices\\DashboardAsyncService",
-                "method":"totalUsage",
-                "params":{
-                    "mode":"rechargeSpot",
+                "method": "totalUsage",
+                "params": {
+                    "mode": "rechargeSpot",
                     "rechargeSpotIds": [recharge_spot_id],
-                    "maxCache":3600
-                }
+                    "maxCache": 3600,
+                },
             }
         }
 
@@ -199,15 +230,44 @@ class EvcNetApiClient:
             "0": {
                 "handler": "\\LMS\\EV\\AsyncServices\\RechargeSpotsAsyncService",
                 "method": "overview",
-                "params": {
-                    "rechargeSpotId": recharge_spot_id
-                }
+                "params": {"rechargeSpotId": recharge_spot_id},
             }
         }
 
         return await self._make_ajax_request(requests_payload)
 
-    async def start_charging(self, recharge_spot_id: str, customer_id: str, card_id: str, channel: str) -> dict[str, Any]:
+    async def get_customer_id(self, recharge_spot_id: str) -> dict[str, Any]:
+        """Get detailed overview of a charging spot."""
+        requests_payload = {
+            "0": {
+                "handler": "\\LMS\\EV\\AsyncServices\\RechargeSpotsAsyncService",
+                "method": "userAccess",
+                "params": {"rechargeSpotId": recharge_spot_id},
+            }
+        }
+
+        return await self._make_ajax_request(requests_payload)
+
+    async def get_card_id(
+        self, recharge_spot_id: str, customer_id: str
+    ) -> dict[str, Any]:
+        """Get detailed overview of a charging spot."""
+        requests_payload = {
+            "0": {
+                "handler": "\\LMS\\EV\\AsyncServices\\RechargeSpotsAsyncService",
+                "method": "cardAccess",
+                "params": {
+                    "rechargeSpotId": recharge_spot_id,
+                    "customerId": customer_id,
+                },
+            }
+        }
+
+        return await self._make_ajax_request(requests_payload)
+
+    async def start_charging(
+        self, recharge_spot_id: str, customer_id: str, card_id: str, channel: str
+    ) -> dict[str, Any]:
         """Start a charging session."""
         requests_payload = {
             "0": {
@@ -219,14 +279,16 @@ class EvcNetApiClient:
                     "clickedButtonId": 0,
                     "channel": channel,
                     "customer": customer_id,
-                    "card": card_id
-                }
+                    "card": card_id,
+                },
             }
         }
 
         return await self._make_ajax_request(requests_payload)
 
-    async def stop_charging(self, recharge_spot_id: str, channel: str) -> dict[str, Any]:
+    async def stop_charging(
+        self, recharge_spot_id: str, channel: str
+    ) -> dict[str, Any]:
         """Stop a charging session."""
         requests_payload = {
             "0": {
@@ -236,8 +298,8 @@ class EvcNetApiClient:
                     "action": "StopTransaction",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
@@ -253,8 +315,8 @@ class EvcNetApiClient:
                     "action": "SoftReset",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
@@ -270,14 +332,16 @@ class EvcNetApiClient:
                     "action": "HardReset",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
         return await self._make_ajax_request(requests_payload)
 
-    async def unlock_connector(self, recharge_spot_id: str, channel: str) -> dict[str, Any]:
+    async def unlock_connector(
+        self, recharge_spot_id: str, channel: str
+    ) -> dict[str, Any]:
         """Unlock the connector on a charging station."""
         requests_payload = {
             "0": {
@@ -287,8 +351,8 @@ class EvcNetApiClient:
                     "action": "UnlockConnector",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
@@ -304,8 +368,8 @@ class EvcNetApiClient:
                     "action": "Block",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
@@ -321,8 +385,8 @@ class EvcNetApiClient:
                     "action": "Unblock",
                     "rechargeSpotId": recharge_spot_id,
                     "clickedButtonId": 0,
-                    "channel": channel
-                }
+                    "channel": channel,
+                },
             }
         }
 
