@@ -7,8 +7,7 @@ from typing import Any
 import aiohttp
 from yarl import URL
 
-from . import EvcNetException
-from .const import AJAX_ENDPOINT, LOGIN_ENDPOINT
+from .const import AJAX_ENDPOINT, LOGIN_ENDPOINT, EvcNetException
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +53,9 @@ class EvcNetApiClient:
                 if response.status == 302:
                     # Only method that works with multiple cookies: From cookie jar (HASS session has cookie support)
                     if hasattr(self.session, "cookie_jar"):
-                        cookies = self.session.cookie_jar.filter_cookies(URL(self.base_url))
+                        cookies = self.session.cookie_jar.filter_cookies(
+                            URL(self.base_url)
+                        )
                         for cookie in cookies.values():
                             if cookie.key == "PHPSESSID":
                                 self._phpsessid = cookie.value

@@ -1,20 +1,23 @@
 {
   "entity": {
     "button": {
-      "soft_reset": {
-        "default": "mdi:restart"
+      "block_charging": {
+        "default": "mdi:cancel"
       },
       "hard_reset": {
         "default": "mdi:power-cycle"
       },
-      "unlock_connector": {
-        "default": "mdi:lock-open-variant"
+      "poll_now": {
+        "default": "mdi:refresh"
       },
-      "block_charging": {
-        "default": "mdi:cancel"
+      "soft_reset": {
+        "default": "mdi:restart"
       },
       "unblock_charging": {
         "default": "mdi:check-circle"
+      },
+      "unlock_connector": {
+        "default": "mdi:lock-open-variant"
       }
     },
     "select": {

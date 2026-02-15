@@ -15,7 +15,8 @@ from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower, UnitO
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import EvcNetConfigEntry, EvcNetException
+from . import EvcNetConfigEntry
+from .const import EvcNetException
 from .coordinator import EvcNetCoordinator, EvcSpotData
 from .entity import EvcNetEntity
 from .utils import convert_time_to_minutes, parse_locale_number

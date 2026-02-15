@@ -44,3 +44,7 @@ CHARGESPOT_STATUS2_FLAGS = {
     "FAULT": 0xD8407940,  # Various fault conditions
 }
 # Note: AVAILABLE state is represented by the absence of all status2 flags
+
+
+class EvcNetException(Exception):
+    """Base exception for EVC-net."""

@@ -33,20 +33,23 @@
   },
   "entity": {
     "button": {
-      "soft_reset": {
-        "name": "Soft Reset"
+      "block_charging": {
+        "name": "Block Charging"
       },
       "hard_reset": {
         "name": "Hard Reset"
       },
-      "unlock_connector": {
-        "name": "Unlock Connector"
+      "poll_now": {
+        "name": "Poll Now"
       },
-      "block_charging": {
-        "name": "Block Charging"
+      "soft_reset": {
+        "name": "Soft Reset"
       },
       "unblock_charging": {
         "name": "Unblock Charging"
+      },
+      "unlock_connector": {
+        "name": "Unlock Connector"
       }
     },
     "select": {

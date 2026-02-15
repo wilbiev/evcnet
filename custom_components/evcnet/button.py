@@ -8,7 +8,8 @@ from homeassistant.components.button import ButtonEntity, ButtonEntityDescriptio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import EvcNetConfigEntry, EvcNetException
+from . import EvcNetConfigEntry
+from .const import EvcNetException
 from .coordinator import EvcNetCoordinator
 from .entity import EvcNetEntity
 

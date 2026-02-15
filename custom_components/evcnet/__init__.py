@@ -15,7 +15,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EvcNetApiClient
-from .const import CONF_BASE_URL, DOMAIN
+from .const import CONF_BASE_URL, DOMAIN, EvcNetException
 from .coordinator import EvcNetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,10 +26,6 @@ PLATFORMS = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
-
-
-class EvcNetException(Exception):
-    """Base exception for EVC-net."""
 
 
 @dataclass
@@ -72,8 +68,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
 
     try:
         await coordinator.async_config_entry_first_refresh()
-    except Exception as err:
-        raise ConfigEntryNotReady(f"Verblijding met EVC-net mislukt: {err}") from err
+    except EvcNetException as err:
+        raise ConfigEntryNotReady(f"Connection with EVC-net failed: {err}") from err
 
     entry.runtime_data = EvcNetData(coordinator=coordinator)
 
@@ -87,7 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
 
 
 def setup_services(hass: HomeAssistant) -> None:
-    """Registreer EVC-net services."""
+    """Register EVC-net services."""
     if hass.services.has_service(DOMAIN, "start_charging"):
         return
 
