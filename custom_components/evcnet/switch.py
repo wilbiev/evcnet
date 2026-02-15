@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -37,6 +38,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         self._attr_unique_id = f"{spot_id}_charging_switch"
         self._attr_icon = "mdi:ev-station"
         self._attr_name = f"Charge Spot {spot_id} Charging"
+        self._attr_entity_category = EntityCategory.CONFIG
 
     @property
     def is_on(self) -> bool:

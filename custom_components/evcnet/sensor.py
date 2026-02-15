@@ -52,7 +52,7 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
             "channel": data.status.get("CHANNEL"),
             "card_idx": data.status.get("CARDS_IDX"),
             "customer_idx": data.status.get("CUSTOMERS_IDX"),
-            "customer_name": data.status.get("CUSTOMERS_NAME"),
+            "customer_name": data.status.get("CUSTOMER_NAME"),
             "software_version": data.info.get("SOFTWARE_VERSION"),
             "address": data.info.get("ADDRESS"),
             "reference": data.info.get("REFERENCE"),

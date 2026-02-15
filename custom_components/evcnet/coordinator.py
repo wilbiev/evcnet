@@ -8,7 +8,6 @@ from typing import Any, cast
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import EvcNetException
 from .api import EvcNetApiClient
 from .const import (
     DEFAULT_SCAN_INTERVAL,
@@ -17,6 +16,7 @@ from .const import (
     KEY_CARDS_IDX,
     KEY_CUSTOMER_NAME,
     KEY_CUSTOMERS_IDX,
+    EvcNetException,
 )
 from .utils import get_nested_value, get_total_energy_usage_kwh
 

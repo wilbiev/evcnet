@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -36,6 +37,7 @@ class EvcNetSelect(EvcNetEntity, SelectEntity):
         super().__init__(coordinator, spot_id)
         self._attr_unique_id = f"{spot_id}_active_card_selector"
         self._attr_translation_key = "active_card"
+        self._attr_entity_category = EntityCategory.CONFIG
 
     @property
     def options(self) -> list[str]:
