@@ -109,8 +109,8 @@ def convert_energy_to_kwh(value: float, unit: str) -> float:
 
 def get_total_energy_usage_kwh(data: dict) -> float:
     """Extract total energy usage and convert to kWh, handling dynamic units."""
-    number = get_nested_value(data.get("total_energy_usage", {}), "number", default=0)
-    unit = get_nested_value(data.get("total_energy_usage", {}), "unit", default="kWh")
+    number = data.get("number", 0.0)
+    unit = data.get("unit", "kWh")
 
     # Parse the number if it's a string
     if isinstance(number, str):
