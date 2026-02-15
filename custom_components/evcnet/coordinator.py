@@ -226,7 +226,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                     status[KEY_CARDS_IDX] = selected_card_id
                     status[KEY_CARDID] = list(available_cards.keys())[0]
                     _LOGGER.info(
-                        "Selected card for spot %s was not valid or new. Default selected.",
+                        "Selected card for spot %s was not valid or new. Default selected",
                         spot_id,
                     )
         else:
@@ -237,8 +237,11 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
     async def _async_get_total_energy_usage(self, spot_id: str) -> float:
         """Get total energy usage for a spot."""
-        if total_energy_dict := await self.client.get_spot_total_energy_usage(
-            str(spot_id)
-        ):
-            return get_total_energy_usage_kwh(total_energy_dict)
+        total_energy_list = cast(
+            list[dict[str, Any]],
+            await self.client.get_spot_total_energy_usage(str(spot_id)),
+        )
+        if total_energy_list and isinstance(total_energy_list, list):
+            if len(total_energy_list) > 0 and isinstance(total_energy_list[0], dict):
+                return get_total_energy_usage_kwh(total_energy_list[0])
         return 0.0
