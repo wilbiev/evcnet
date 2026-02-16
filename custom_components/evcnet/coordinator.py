@@ -275,18 +275,24 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_card_id = old_selections.get(spot_id)
 
                 if not selected_card_id and available_cards:
-                    selected_card_id = card_data[0][0].get(KEY_ID)
+                    selected_card_id = list(available_cards.values())[0]
                     status[KEY_CARDS_IDX] = selected_card_id
-                    status[KEY_CARDID] = card_data[0][0].get(KEY_TEXT)
+                    status[KEY_CARDID] = list(available_cards.keys())[0]
                 elif selected_card_id and available_cards:
                     if selected_card_id not in available_cards.values():
-                        selected_card_id = card_data[0][0].get(KEY_ID)
+                        selected_card_id = list(available_cards.values())[0]
                         status[KEY_CARDS_IDX] = selected_card_id
-                        status[KEY_CARDID] = card_data[0][0].get(KEY_TEXT)
+                        status[KEY_CARDID] = list(available_cards.keys())[0]
                         _LOGGER.info(
                             "Selected card for spot %s was not valid or new. Default selected",
                             spot_id,
                         )
+                    else:
+                        for name, card_id in available_cards.items():
+                            if card_id == selected_card_id:
+                                status[KEY_CARDS_IDX] = selected_card_id
+                                status[KEY_CARDID] = name
+                                break
             else:
                 status[KEY_CARDS_IDX] = ""
                 status[KEY_CARDID] = ""
