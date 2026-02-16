@@ -90,9 +90,8 @@ class EvcNetSelect(EvcNetEntity, SelectEntity):
         if not spot_data:
             return None
 
-        # Logica differs per type (Card vs Channel)
         if self.entity_description.key == "active_card":
-            # Zoek de naam (key) bij de geselecteerde card_id (value)
+            # Search name (key) for selected card_id (value)
             for name, card_id in spot_data.available_cards.items():
                 if card_id == spot_data.selected_card_id:
                     return name
