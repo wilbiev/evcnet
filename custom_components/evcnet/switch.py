@@ -69,7 +69,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         # Get the context from our model (set by the select entity!)
         card_id = spot_data.selected_card_id
         customer_id = spot_data.customer_id
-        channel = str(spot_data.info.get("CHANNEL", "1"))
+        channel_id = spot_data.selected_channel_id
 
         if not card_id or not customer_id:
             _LOGGER.error(
@@ -80,7 +80,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
 
         try:
             await self.coordinator.client.start_charging(
-                self._spot_id, customer_id, card_id, channel
+                self._spot_id, customer_id, card_id, channel_id
             )
             await asyncio.sleep(3)
             await self.coordinator.async_request_refresh()
@@ -91,10 +91,10 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop charging."""
         spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        channel = str(spot_data.info.get("CHANNEL", "1")) if spot_data else "1"
+        channel_id = spot_data.selected_channel_id if spot_data else "1"
 
         try:
-            await self.coordinator.client.stop_charging(self._spot_id, channel)
+            await self.coordinator.client.stop_charging(self._spot_id, channel_id)
             await asyncio.sleep(3)
             await self.coordinator.async_request_refresh()
         except Exception as err:
@@ -110,7 +110,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
 
         return {
             "spot_id": self._spot_id,
-            "channel": spot_data.status.get("CHANNEL"),
+            "channel": spot_data.selected_channel_id,
             "customer_id": spot_data.customer_id,
             "selected_card_id": spot_data.selected_card_id,
         }

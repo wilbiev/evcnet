@@ -8,6 +8,7 @@ CONF_BASE_URL = "base_url"
 # Default values
 DEFAULT_BASE_URL = "https://50five-snl.evc-net.com"
 DEFAULT_SCAN_INTERVAL = 60  # seconds
+LOG_ROW_LIMIT = 100  # Max number of log entries to process/display
 
 # API endpoints
 LOGIN_ENDPOINT = "/Login/Login"

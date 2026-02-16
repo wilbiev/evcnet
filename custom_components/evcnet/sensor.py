@@ -37,6 +37,9 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         key="status",
         translation_key="status",
         value_fn=lambda data: data.status.get("NOTIFICATION", "Unknown"),
+        attributes_fn=lambda data: {
+            "log_data": data.logging,
+        },
     ),
     EvcNetSensorEntityDescription(
         key="status_code",
@@ -67,7 +70,7 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.status.get("MOM_POWER_KW", 0),
+        value_fn=lambda data: parse_locale_number(data.status.get("MOM_POWER_KW", 0.0)),
     ),
     EvcNetSensorEntityDescription(
         key="total_energy_usage",
@@ -85,7 +88,9 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.status.get("TRANS_ENERGY_DELIVERED_KWH", 0),
+        value_fn=lambda data: parse_locale_number(
+            data.status.get("TRANS_ENERGY_DELIVERED_KWH", 0.0)
+        ),
     ),
     EvcNetSensorEntityDescription(
         key="session_time",
@@ -152,19 +157,6 @@ class EvcNetSensor(EvcNetEntity, SensorEntity):
                 err,
             )
             return None
-
-        # Filter out empty strings
-        if value is None or value == "":
-            return None
-
-        # Parse locale-aware numbers for numeric sensors
-        # Sensors with device_class and state_class expect numeric values
-        if (
-            self.entity_description.device_class is not None
-            or self.entity_description.state_class is not None
-        ) and isinstance(value, str):
-            # This is a numeric sensor with a string value, parse it
-            return parse_locale_number(value, default=0.0)
 
         return value
 

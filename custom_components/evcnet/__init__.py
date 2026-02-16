@@ -7,11 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import (
-    config_validation as cv,
-    entity_registry as er,
-    service,
-)
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EvcNetApiClient
@@ -89,8 +85,9 @@ def setup_services(hass: HomeAssistant) -> None:
 
     async def handle_start_charging(call: ServiceCall) -> None:
         """Service to start a charging session (supports an optional RFID card ID)."""
-        entity_ids = await service.async_extract_entity_ids(call)
+        entity_ids = call.data.get("entity_id", [])
         card_id_override = call.data.get("card_id")
+        channel_id_override = call.data.get("channel_id")
 
         registry = er.async_get(hass)
         for entity_id in entity_ids:
@@ -106,7 +103,7 @@ def setup_services(hass: HomeAssistant) -> None:
                 continue
 
             coordinator = entry.runtime_data.coordinator
-            # Haal spot_id uit unique_id (bijv. "12345_charging_switch")
+            # Get spot_id from unique_id (bijv. "12345_charging_switch")
             spot_id = entity_entry.unique_id.split("_")[0]
             spot_data = coordinator.data.get(spot_id)
 
@@ -114,11 +111,11 @@ def setup_services(hass: HomeAssistant) -> None:
                 # Prioriteit: 1. Service call card_id, 2. Geselecteerde kaart in UI
                 card_id = card_id_override or spot_data.selected_card_id
                 customer_id = spot_data.customer_id
-                channel = str(spot_data.info.get("CHANNEL", "1"))
+                channel_id = channel_id_override or spot_data.selected_channel_id
 
-                if card_id and customer_id:
+                if card_id and channel_id and customer_id:
                     await coordinator.client.start_charging(
-                        spot_id, customer_id, card_id, channel
+                        spot_id, customer_id, card_id, channel_id
                     )
                     await coordinator.async_request_refresh()
 

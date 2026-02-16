@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - 2025-12-10
+## [1.1.0] - 2025-12-10
 
 ### Improvements
 
@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Select entity to select card_id
+- Select entities to select card_id and channel_id
 
 ### Fixed
 

@@ -53,6 +53,9 @@
       }
     },
     "select": {
+      "active_channel": {
+        "name": "Active Channel"
+      },
       "active_card": {
         "name": "Active Card"
       }

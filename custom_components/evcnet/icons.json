@@ -21,6 +21,9 @@
       }
     },
     "select": {
+      "active_channel": {
+        "default": "mdi:numeric"
+      },
       "active_card": {
         "default": "mdi:card-account-details"
       }

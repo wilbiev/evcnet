@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from homeassistant.components.select import SelectEntity
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -12,58 +16,105 @@ from .coordinator import EvcNetCoordinator, EvcSpotData
 from .entity import EvcNetEntity
 
 
+@dataclass(frozen=True, kw_only=True)
+class EvcNetSelectEntityDescription(SelectEntityDescription):
+    """Describes EVC-net sensor entity."""
+
+    options_fn: Callable[[EvcSpotData], Any] | None = None
+
+
+SELECT_TYPES: tuple[EvcNetSelectEntityDescription, ...] = (
+    EvcNetSelectEntityDescription(
+        key="active_card",
+        translation_key="active_card",
+        entity_category=EntityCategory.CONFIG,
+        options_fn=lambda data: list(data.available_cards.keys()),
+    ),
+    EvcNetSelectEntityDescription(
+        key="active_channel",
+        translation_key="status_channel",
+        entity_category=EntityCategory.CONFIG,
+        options_fn=lambda data: list(data.available_channels.values()),
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: EvcNetConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up EVC-net select entities."""
+    """Set up EVC-net selects."""
     coordinator = entry.runtime_data.coordinator
 
     async_add_entities(
-        EvcNetSelect(coordinator, spot_id) for spot_id in coordinator.data
+        EvcNetSelect(
+            coordinator,
+            description,
+            spot_id,
+        )
+        for spot_id in coordinator.data
+        for description in SELECT_TYPES
     )
 
 
 class EvcNetSelect(EvcNetEntity, SelectEntity):
     """Representation of a EVC-net card selector."""
 
+    entity_description: EvcNetSelectEntityDescription
+
     def __init__(
         self,
         coordinator: EvcNetCoordinator,
+        description: EvcNetSelectEntityDescription,
         spot_id: str,
     ) -> None:
         """Initialize the select entity."""
         super().__init__(coordinator, spot_id)
-        self._attr_unique_id = f"{spot_id}_active_card_selector"
-        self._attr_translation_key = "active_card"
-        self._attr_entity_category = EntityCategory.CONFIG
+        self.entity_description = description
+        self._attr_unique_id = f"{spot_id}_{description.key}_select"
 
     @property
     def options(self) -> list[str]:
-        """Return a list of available card names."""
-        spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        if not spot_data:
+        """Return a list of available select options."""
+        spot_data = self.coordinator.data.get(self._spot_id)
+        if not spot_data or not self.entity_description.options_fn:
             return []
-        return list(spot_data.available_cards.keys())
+
+        return self.entity_description.options_fn(spot_data)
 
     @property
     def current_option(self) -> str | None:
-        """Return the name of the currently selected card."""
-        spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        if not spot_data or not spot_data.selected_card_id:
+        """Return the currently selected option."""
+        spot_data = self.coordinator.data.get(self._spot_id)
+        if not spot_data:
             return None
 
-        # Find the name (key) that corresponds to the selected card ID (value)
-        for name, card_id in spot_data.available_cards.items():
-            if card_id == spot_data.selected_card_id:
-                return name
+        # Logica differs per type (Card vs Channel)
+        if self.entity_description.key == "active_card":
+            # Zoek de naam (key) bij de geselecteerde card_id (value)
+            for name, card_id in spot_data.available_cards.items():
+                if card_id == spot_data.selected_card_id:
+                    return name
+            return None
+
+        if self.entity_description.key == "active_channel":
+            return spot_data.selected_channel_id
+
         return None
 
     async def async_select_option(self, option: str) -> None:
-        """Update the selected card ID in the coordinator data."""
-        spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
+        """Update the selected option in the coordinator data."""
+        spot_data = self.coordinator.data.get(self._spot_id)
+        if not spot_data:
+            return
 
-        if spot_data and (selected_id := spot_data.available_cards.get(option)):
-            spot_data.selected_card_id = selected_id
-            self.async_write_ha_state()
+        if self.entity_description.key == "active_card":
+            if selected_id := spot_data.available_cards.get(option):
+                spot_data.selected_card_id = selected_id
+
+        elif self.entity_description.key == "active_channel":
+            spot_data.selected_channel_id = option
+            await self.coordinator.async_refresh()
+
+        self.async_write_ha_state()

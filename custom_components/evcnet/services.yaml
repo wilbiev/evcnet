@@ -13,3 +13,24 @@ start_charging:
       required: false
       selector:
         text:
+    channel_id:
+      name: "Channel"
+      description: "Optional channel (socket) to use for this charging session."
+      required: false
+      default: "1"
+      example: "2"
+      selector:
+        select:
+          options:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
+            - "6"
+            - "7"
+            - "8"
+            - "9"
+            - "10"
+          custom_value: true
+          mode: dropdown

@@ -1,47 +1,12 @@
 """Utils for EVC-net."""
 
+from datetime import datetime
 import logging
 from typing import Any
 
+from .const import LOG_ROW_LIMIT
+
 _LOGGER = logging.getLogger(__name__)
-
-
-def get_nested_value(data, key, default: Any = "") -> Any:
-    """Get nested value by key."""
-
-    if isinstance(data, dict):
-        if key in data:
-            if data[key] is not None:
-                return data[key]
-            return default
-
-        for v in data.values():
-            result = get_nested_value(v, key, default=None)
-            if result is not None:
-                return result
-
-    # 2. Handle Lists with the "First Value is Number" Guard
-    elif isinstance(data, list):
-        for item in data:
-            result = get_nested_value(item, key, default=None)
-            if result is not None:
-                return result
-
-    return default
-
-
-def update_nested_value(data, key, new_value):
-    """Update nested value by key."""
-
-    if isinstance(data, dict):
-        for k, v in data.items():
-            if k == key:
-                data[k] = new_value  # Update the value in place
-            else:
-                update_nested_value(v, key, new_value)
-    elif isinstance(data, list):
-        for item in data:
-            update_nested_value(item, key, new_value)
 
 
 def parse_locale_number(value: Any, default: float = 0.0) -> float:
@@ -120,3 +85,107 @@ def get_total_energy_usage_kwh(data: dict) -> float:
 
     # Convert to kWh
     return convert_energy_to_kwh(number, unit)
+
+
+def format_logging_to_markdown(log_list: list[dict]) -> str:
+    """Convert the API logging data to a Markdown table."""
+    if not log_list:
+        return "No logging data available."
+
+    target_keys = [
+        "LOG_DATE",
+        "NOTIFICATION",
+        "MOM_POWER_KW",
+        "TRANS_ENERGY_DELIVERED_KWH",
+        "TRANSACTION_TIME_H_M",
+    ]
+    header_keys = ["Date", "Message", "Power (kW)", "Energy (kWh)", "Time"]
+
+    # Remove duplicates and format dates
+    seen = set()
+    unique_rows = []
+
+    for item in log_list:
+        date_val = item.get("LOG_DATE", "")
+        # Remove seconds for deduplication
+        date_to_minute = date_val[:-3] if len(date_val) > 3 else date_val
+
+        identifier = (
+            f"{date_to_minute}|{item.get('NOTIFICATION')}|{item.get('MOM_POWER_KW')}"
+        )
+
+        if identifier not in seen:
+            seen.add(identifier)
+
+            # Format the row for Markdown output
+            row = []
+            for key in target_keys:
+                val = item.get(key, "-")
+                if key == "LOG_DATE" and val != "-":
+                    val = format_date(val)
+                row.append(str(val).replace("|", "\\|"))
+            unique_rows.append(f"| {' | '.join(row)} |")
+
+    # Build the table
+    header = f"| {' | '.join(header_keys)} |"
+    separator = f"| {' | '.join(['---'] * len(header_keys))} |"
+
+    now = datetime.now().strftime("%d-%m-%y %H:%M")
+    timestamp_md = f"> 🕒 **Last Update:** {now}\n\n"
+
+    return timestamp_md + "\n".join([header, separator, *unique_rows[:LOG_ROW_LIMIT]])
+
+
+def format_date(date_str: str) -> str:
+    """Convert LMS date strings to a universally readable format."""
+    if not date_str or date_str == "-":
+        return "-"
+
+    try:
+        parts = date_str.split("-")
+        if len(parts) < 3:
+            return date_str
+
+        day = parts[0].zfill(2)
+        month_raw = parts[1].replace(".", "").strip().lower()
+        year_time_parts = parts[2].split(" ")
+        year_short = year_time_parts[0]
+        year_full = f"20{year_short}" if len(year_short) == 2 else year_short
+        time_full = year_time_parts[1]
+        time_parts = time_full.split(":")
+        time_hm = f"{time_parts[0].zfill(2)}:{time_parts[1].zfill(2)}"
+        return f"{day} {month_raw.capitalize()} {year_full}, {time_hm}"
+
+    except (IndexError, ValueError) as err:
+        _LOGGER.debug("Parsing error for date string '%s': %s", date_str, err)
+        return date_str
+
+
+def format_dutch_date(date_str: str) -> str:
+    """Convert LMS date strings to a universally readable format."""
+    try:
+        months = {
+            "jan.": "01",
+            "feb.": "02",
+            "mrt.": "03",
+            "apr.": "04",
+            "mei": "05",
+            "jun.": "06",
+            "jul.": "07",
+            "aug.": "08",
+            "sep.": "09",
+            "okt.": "10",
+            "nov.": "11",
+            "dec.": "12",
+        }
+        parts = date_str.split("-")
+        day = parts[0].zfill(2)
+        month_abbr = parts[1].lower()
+        year_time = parts[2].split(" ")
+        year = year_time[0][-2:]
+        time = ":".join(year_time[1].split(":")[:2])  # Alleen HH:mm
+        return f"{day}-{months.get(month_abbr, '01')}-{year} {time}"
+
+    except (IndexError, KeyError) as err:
+        _LOGGER.debug("Error formatting Dutch date: %s", err)
+        return date_str

@@ -18,7 +18,7 @@ from .const import (
     KEY_CUSTOMERS_IDX,
     EvcNetException,
 )
-from .utils import get_nested_value, get_total_energy_usage_kwh
+from .utils import format_logging_to_markdown, get_total_energy_usage_kwh
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +33,9 @@ class EvcSpotData:
     customer_id: str | None = None
     available_cards: dict[str, str] = field(default_factory=dict)
     selected_card_id: str | None = None
+    selected_channel_id: str = "1"
+    available_channels: dict[int, str] = field(default_factory=dict)
+    logging: str = ""
 
 
 class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
@@ -69,14 +72,15 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 _LOGGER.warning("No charging spots found in response")
                 return {}
 
-            old_selections = self._get_old_selections()
+            old_card_selections = self._get_old_card_selections()
+            old_channel_selections = self._get_old_channel_selections()
             data: dict[str, EvcSpotData] = {}
 
             for spot in self.charge_spots:
                 spot_id = spot.get("IDX")
                 if spot_id:
                     spot_data = await self._async_process_spot(
-                        spot, spot_id, old_selections
+                        spot, spot_id, old_card_selections, old_channel_selections
                     )
                     data[spot_id] = spot_data
 
@@ -112,7 +116,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         _LOGGER.info("Found %d charging spot(s)", len(self.charge_spots))
         _LOGGER.debug("Charging spots: %s", self.charge_spots)
 
-    def _get_old_selections(self) -> dict[str, Any]:
+    def _get_old_card_selections(self) -> dict[str, Any]:
         """Get previous card selections to avoid overwriting them."""
         old_selections = {}
         if self.data:
@@ -121,33 +125,86 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                     old_selections[sid] = sdata.selected_card_id
         return old_selections
 
+    def _get_old_channel_selections(self) -> dict[str, Any]:
+        """Get previous channel selections to avoid overwriting them."""
+        old_selections = {}
+        if self.data:
+            for sid, sdata in self.data.items():
+                if sdata.selected_channel_id:
+                    old_selections[sid] = sdata.selected_channel_id
+        return old_selections
+
     async def _async_process_spot(
-        self, spot: dict[str, Any], spot_id: str, old_selections: dict[str, Any]
+        self,
+        spot: dict[str, Any],
+        spot_id: str,
+        old_card_selections: dict[str, Any],
+        old_channel_selections: dict[str, Any],
     ) -> EvcSpotData:
         """Process a single charging spot."""
         try:
-            status = await self._async_get_spot_status(spot_id)
+            status = {}
             customer_idx = None
             available_cards = {}
             selected_card_id = None
-
-            if status:
-                (
-                    customer_idx,
-                    available_cards,
-                    selected_card_id,
-                ) = await self._async_process_customer_and_cards(
-                    spot_id, status, old_selections
+            available_channels = {}
+            selected_channel_id = "1"
+            logging_data = ""
+            status_response = cast(
+                list[list[dict[str, Any]]],
+                await self.client.get_spot_overview(str(spot_id)),
+            )
+            if isinstance(status_response, list) and len(status_response) > 0:
+                available_channels = {}
+                for index, channel_info in enumerate(status_response[0]):
+                    channel_name = str(channel_info.get("CHANNEL", index + 1))
+                    available_channels[index] = channel_name
+                if not available_channels:
+                    available_channels = {0: "1"}
+                selected_channel_id = old_channel_selections.get(spot_id)
+                if selected_channel_id not in available_channels.values():
+                    selected_channel_id = list(available_channels.values())[0]
+                    _LOGGER.info(
+                        "Selected channel for spot %s was not valid or new. Default selected",
+                        spot_id,
+                    )
+                target_index = next(
+                    (
+                        idx
+                        for idx, name in available_channels.items()
+                        if name == selected_channel_id
+                    ),
+                    0,
                 )
-
+                try:
+                    status = status_response[0][target_index]
+                except IndexError:
+                    status = status_response[0][0] if status_response[0] else {}
+                if status:
+                    (
+                        customer_idx,
+                        available_cards,
+                        selected_card_id,
+                    ) = await self._async_process_customer_and_cards(
+                        spot_id, status, old_card_selections
+                    )
+                    _LOGGER.debug("Status for spot %s: %s", spot_id, status)
             total_energy_usage = await self._async_get_total_energy_usage(spot_id)
-
-            _LOGGER.debug("Status for spot %s: %s", spot_id, status)
             _LOGGER.debug(
                 "Total energy usage for spot %s: %s",
                 spot_id,
                 total_energy_usage,
             )
+            if selected_channel_id:
+                logging_data = await self._async_get_logging(
+                    spot_id, selected_channel_id
+                )
+                _LOGGER.debug(
+                    "Logging data for spot %s channel %s: %s",
+                    spot_id,
+                    selected_channel_id,
+                    logging_data,
+                )
 
             return EvcSpotData(
                 info=spot,
@@ -156,6 +213,9 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 customer_id=customer_idx,
                 available_cards=available_cards,
                 selected_card_id=selected_card_id,
+                available_channels=available_channels,
+                selected_channel_id=str(selected_channel_id),
+                logging=logging_data,
             )
 
         except EvcNetException as err:
@@ -171,20 +231,11 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 status={},
                 total_energy_usage=0.0,
                 available_cards={},
+                selected_card_id=None,
+                available_channels={},
+                selected_channel_id="",
+                logging="",
             )
-
-    async def _async_get_spot_status(self, spot_id: str) -> dict[str, Any]:
-        """Get status for a charging spot."""
-        status = {}
-        status_response = cast(
-            list[list[dict[str, Any]]],
-            await self.client.get_spot_overview(str(spot_id)),
-        )
-        if isinstance(status_response, list) and len(status_response) > 0:
-            first_status = status_response[0][0]
-            if isinstance(first_status, dict) and len(first_status) > 0:
-                status = first_status
-        return status
 
     async def _async_process_customer_and_cards(
         self,
@@ -198,40 +249,45 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         selected_card_id = None
 
         if not customer_idx:
-            customer_data = await self.client.get_customer_id(spot_id)
-            customer_idx = get_nested_value(customer_data, "id")
-            customer_text = get_nested_value(customer_data, "text")
-            status[KEY_CUSTOMERS_IDX] = customer_idx
-            status[KEY_CUSTOMER_NAME] = customer_text
+            customer_data = cast(
+                list[list[dict[str, Any]]],
+                await self.client.get_customer_id(spot_id),
+            )
+            if isinstance(customer_data, list) and len(customer_data) > 0:
+                customer_idx = customer_data[0][0].get("id")
+                customer_text = customer_data[0][0].get("text")
+                status[KEY_CUSTOMERS_IDX] = customer_idx
+                status[KEY_CUSTOMER_NAME] = customer_text
 
-        card_data = cast(
-            list[list[dict[str, Any]]],
-            await self.client.get_card_id(spot_id, customer_idx),
-        )
-        if (
-            isinstance(card_data, list)
-            and len(card_data) > 0
-            and isinstance(card_data[0], list)
-        ):
-            available_cards = {card["text"]: card["id"] for card in card_data[0]}
-            selected_card_id = old_selections.get(spot_id)
+        if customer_idx:
+            card_data = cast(
+                list[list[dict[str, Any]]],
+                await self.client.get_card_id(spot_id, customer_idx),
+            )
+            if (
+                isinstance(card_data, list)
+                and len(card_data) > 0
+                and isinstance(card_data[0], list)
+            ):
+                available_cards = {card["text"]: card["id"] for card in card_data[0]}
+                selected_card_id = old_selections.get(spot_id)
 
-            if not selected_card_id and available_cards:
-                selected_card_id = list(available_cards.values())[0]
-                status[KEY_CARDS_IDX] = selected_card_id
-                status[KEY_CARDID] = list(available_cards.keys())[0]
-            elif selected_card_id and available_cards:
-                if selected_card_id not in available_cards.values():
+                if not selected_card_id and available_cards:
                     selected_card_id = list(available_cards.values())[0]
                     status[KEY_CARDS_IDX] = selected_card_id
                     status[KEY_CARDID] = list(available_cards.keys())[0]
-                    _LOGGER.info(
-                        "Selected card for spot %s was not valid or new. Default selected",
-                        spot_id,
-                    )
-        else:
-            status[KEY_CARDS_IDX] = ""
-            status[KEY_CARDID] = ""
+                elif selected_card_id and available_cards:
+                    if selected_card_id not in available_cards.values():
+                        selected_card_id = list(available_cards.values())[0]
+                        status[KEY_CARDS_IDX] = selected_card_id
+                        status[KEY_CARDID] = list(available_cards.keys())[0]
+                        _LOGGER.info(
+                            "Selected card for spot %s was not valid or new. Default selected",
+                            spot_id,
+                        )
+            else:
+                status[KEY_CARDS_IDX] = ""
+                status[KEY_CARDID] = ""
 
         return customer_idx, available_cards, selected_card_id
 
@@ -245,3 +301,19 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             if len(total_energy_list) > 0 and isinstance(total_energy_list[0], dict):
                 return get_total_energy_usage_kwh(total_energy_list[0])
         return 0.0
+
+    async def _async_get_logging(self, spot_id: str, channel_id: str) -> str:
+        """Get logging data for a spot and channel."""
+        try:
+            logging_response = cast(
+                list[dict[str, Any]],
+                await self.client.get_spot_log(str(spot_id), channel_id),
+            )
+
+            if isinstance(logging_response, list) and len(logging_response) > 0:
+                format_logging_to_markdown(logging_response)
+
+        except EvcNetException as err:
+            _LOGGER.debug("Could not fetch logging for spot %s: %s", spot_id, err)
+
+        return ""
