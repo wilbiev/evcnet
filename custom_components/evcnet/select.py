@@ -32,7 +32,7 @@ SELECT_TYPES: tuple[EvcNetSelectEntityDescription, ...] = (
     ),
     EvcNetSelectEntityDescription(
         key="active_channel",
-        translation_key="status_channel",
+        translation_key="active_channel",
         entity_category=EntityCategory.CONFIG,
         options_fn=lambda data: list(data.available_channels.values()),
     ),

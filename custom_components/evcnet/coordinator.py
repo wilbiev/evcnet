@@ -306,12 +306,22 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         """Get logging data for a spot and channel."""
         try:
             logging_response = cast(
-                list[dict[str, Any]],
+                list[list[Any]],
                 await self.client.get_spot_log(str(spot_id), channel_id),
             )
 
             if isinstance(logging_response, list) and len(logging_response) > 0:
-                format_logging_to_markdown(logging_response)
+                if (
+                    isinstance(logging_response[0], list)
+                    and len(logging_response[0]) > 0
+                ):
+                    return format_logging_to_markdown(logging_response[0])
+                _LOGGER.debug(
+                    "Logging response for spot %s channel %s is empty or not a list: %s",
+                    spot_id,
+                    channel_id,
+                    logging_response,
+                )
 
         except EvcNetException as err:
             _LOGGER.debug("Could not fetch logging for spot %s: %s", spot_id, err)

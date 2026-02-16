@@ -38,6 +38,8 @@ def convert_time_to_minutes(time_str: str) -> int:
     """Convert HH:mm to total minutes."""
     try:
         parts = time_str.split(":")
+        if len(parts) != 2:
+            return 0
         return (int(parts[0]) * 60) + int(parts[1])
     except (ValueError, IndexError):
         return 0
@@ -87,7 +89,7 @@ def get_total_energy_usage_kwh(data: dict) -> float:
     return convert_energy_to_kwh(number, unit)
 
 
-def format_logging_to_markdown(log_list: list[dict]) -> str:
+def format_logging_to_markdown(log_list: list[Any]) -> str:
     """Convert the API logging data to a Markdown table."""
     if not log_list:
         return "No logging data available."
