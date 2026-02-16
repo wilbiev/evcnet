@@ -16,6 +16,8 @@ from .const import (
     KEY_CARDS_IDX,
     KEY_CUSTOMER_NAME,
     KEY_CUSTOMERS_IDX,
+    KEY_ID,
+    KEY_TEXT,
     EvcNetException,
 )
 from .utils import format_logging_to_markdown, get_total_energy_usage_kwh
@@ -254,8 +256,8 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 await self.client.get_customer_id(spot_id),
             )
             if isinstance(customer_data, list) and len(customer_data) > 0:
-                customer_idx = customer_data[0][0].get("id")
-                customer_text = customer_data[0][0].get("text")
+                customer_idx = customer_data[0][0].get(KEY_ID)
+                customer_text = customer_data[0][0].get(KEY_TEXT)
                 status[KEY_CUSTOMERS_IDX] = customer_idx
                 status[KEY_CUSTOMER_NAME] = customer_text
 
@@ -273,14 +275,14 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_card_id = old_selections.get(spot_id)
 
                 if not selected_card_id and available_cards:
-                    selected_card_id = list(available_cards.values())[0]
+                    selected_card_id = card_data[0][0].get(KEY_ID)
                     status[KEY_CARDS_IDX] = selected_card_id
-                    status[KEY_CARDID] = list(available_cards.keys())[0]
+                    status[KEY_CARDID] = card_data[0][0].get(KEY_TEXT)
                 elif selected_card_id and available_cards:
                     if selected_card_id not in available_cards.values():
-                        selected_card_id = list(available_cards.values())[0]
+                        selected_card_id = card_data[0][0].get(KEY_ID)
                         status[KEY_CARDS_IDX] = selected_card_id
-                        status[KEY_CARDID] = list(available_cards.keys())[0]
+                        status[KEY_CARDID] = card_data[0][0].get(KEY_TEXT)
                         _LOGGER.info(
                             "Selected card for spot %s was not valid or new. Default selected",
                             spot_id,

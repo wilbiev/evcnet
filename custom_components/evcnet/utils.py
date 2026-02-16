@@ -36,12 +36,15 @@ def parse_locale_number(value: Any, default: float = 0.0) -> float:
 
 def convert_time_to_minutes(time_str: str) -> int:
     """Convert HH:mm to total minutes."""
+    if not time_str or not isinstance(time_str, str):
+        return 0
     try:
         parts = time_str.split(":")
-        if len(parts) != 2:
-            return 0
-        return (int(parts[0]) * 60) + int(parts[1])
+        if len(parts) == 2:
+            return (int(parts[0]) * 60) + int(parts[1])
     except (ValueError, IndexError):
+        return 0
+    else:
         return 0
 
 
