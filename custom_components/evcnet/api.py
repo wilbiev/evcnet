@@ -32,7 +32,17 @@ class EvcNetApiClient:
         self._serverid = None
 
     async def authenticate(self) -> bool:
-        """Authenticate with the EVC-net API."""
+        """Authenticate with EVC-net. First standard method, then fallback to browser emulation if needed."""
+        _LOGGER.debug("Start authentication process")
+
+        if await self._standard_login():
+            return True
+        _LOGGER.info("Standard login failed, switching to browser emulation fallback")
+
+        return await self._browser_emulation_login()
+
+    async def _standard_login(self) -> bool:
+        """Standard authentication with the EVC-net API."""
         url = f"{self.base_url}{LOGIN_ENDPOINT}"
 
         data = {
@@ -87,6 +97,50 @@ class EvcNetApiClient:
             return False
         except EvcNetException as err:
             _LOGGER.error("Unexpected error during authentication: %s", err)
+            return False
+
+    async def _browser_emulation_login(self) -> bool:
+        """Browser-emulation login, uses multipart/form-data andn session-cookies."""
+        url_login = f"{self.base_url}{LOGIN_ENDPOINT}"
+
+        try:
+            # We use a session to catch SERVERID and PHPSESSID
+            async with aiohttp.ClientSession() as session:
+                # Get the initial SERVERID cookie
+                async with session.get(url_login) as resp:
+                    await resp.text()
+
+                data = aiohttp.FormData()
+                data.add_field("emailField", self.username)
+                data.add_field("passwordField", self.password)
+                data.add_field("Login", "Aanmelden")
+
+                headers = {
+                    "Origin": self.base_url,
+                    "Referer": url_login,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+                }
+
+                async with session.post(
+                    url_login, data=data, headers=headers, allow_redirects=False
+                ) as resp:
+                    if resp.status in [302, 307]:
+                        cookies = session.cookie_jar.filter_cookies(URL(url_login))
+                        sid = cookies.get("SERVERID")
+                        php = cookies.get("PHPSESSID")
+                        if sid and php:
+                            self._server_id = sid.value
+                            self._php_sessid = php.value
+                            _LOGGER.info(
+                                "Successfully completed browser-emulation login"
+                            )
+                            return True
+
+        except EvcNetException as err:
+            _LOGGER.error("Critical error during browser-emulation login: %s", err)
+            return False
+        else:
+            _LOGGER.error("Browser-emulation login failed: no valid cookies received")
             return False
 
     async def _make_ajax_request(self, requests_payload: dict) -> dict[str, Any]:
