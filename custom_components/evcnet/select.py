@@ -114,6 +114,6 @@ class EvcNetSelect(EvcNetEntity, SelectEntity):
 
         elif self.entity_description.key == "active_channel":
             spot_data.selected_channel_id = option
-            await self.coordinator.async_refresh()
+            await self.coordinator.async_poll_spot(self._spot_id)
 
         self.async_write_ha_state()

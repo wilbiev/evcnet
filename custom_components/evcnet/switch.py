@@ -71,7 +71,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         customer_id = spot_data.customer_id
         channel_id = spot_data.selected_channel_id
 
-        if not card_id or not customer_id:
+        if not card_id or not customer_id or not channel_id:
             _LOGGER.error(
                 "Unable to start charging: No card selected for spot %s",
                 self._spot_id,

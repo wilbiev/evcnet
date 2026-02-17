@@ -52,7 +52,7 @@ BUTTON_TYPES: tuple[EvcNetButtonEntityDescription, ...] = (
     EvcNetButtonEntityDescription(
         key="poll_now",
         translation_key="poll_now",
-        command="get_spot_overview",
+        command="poll",
     ),
 )
 
@@ -103,12 +103,16 @@ class EvcNetButton(EvcNetEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
+        if self.entity_description.command == "poll":
+            await self.coordinator.async_request_refresh()
+            return
+
         spot_data = self.coordinator.data.get(self._spot_id)
         if not spot_data:
             _LOGGER.error("Action failed: no data for spot %s", self._spot_id)
             return
 
-        channel = str(spot_data.info.get("CHANNEL", "1"))
+        channel_id = spot_data.selected_channel_id
         api_method_name = self.entity_description.command
 
         # Get the method dynamically from the client
@@ -118,13 +122,11 @@ class EvcNetButton(EvcNetEntity, ButtonEntity):
             _LOGGER.info(
                 "Executing action %s on spot %s", api_method_name, self._spot_id
             )
-            await api_method(self._spot_id, channel)
-
-            # Wait for the action to take effect
+            await api_method(self._spot_id, channel_id)
             await asyncio.sleep(3)
 
-            # Force a refresh to get the new state
-            await self.coordinator.async_request_refresh()
+            # Force a refresh of the spot
+            await self.coordinator.async_poll_spot(self._spot_id)
 
         except EvcNetException as err:
             _LOGGER.error("Error executing action %s: %s", api_method_name, err)

@@ -335,3 +335,29 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             _LOGGER.debug("Could not fetch logging for spot %s: %s", spot_id, err)
 
         return ""
+
+    async def async_poll_spot(self, spot_id: str) -> None:
+        """Update only the data for a specific charging spot."""
+        if spot_id not in self.data:
+            _LOGGER.error("Spot %s not found in current data", spot_id)
+            return
+
+        _LOGGER.debug("Manual update trigger for spot %s", spot_id)
+
+        current_spot_data = self.data[spot_id]
+        raw_spot = next(
+            (s for s in self.charge_spots if str(s.get("IDX")) == spot_id), None
+        )
+        if not raw_spot:
+            return
+
+        new_spot_data = await self._async_process_spot(
+            spot=raw_spot,
+            spot_id=spot_id,
+            old_card_selections={spot_id: current_spot_data.selected_card_id},
+            old_channel_selections={spot_id: current_spot_data.selected_channel_id},
+        )
+
+        new_data = {**self.data}
+        new_data[spot_id] = new_spot_data
+        self.async_set_updated_data(new_data)
