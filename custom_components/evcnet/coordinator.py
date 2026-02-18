@@ -18,16 +18,17 @@ from .const import (
     KEY_CUSTOMERS_IDX,
     KEY_ID,
     KEY_TEXT,
+    LOG_ROW_LIMIT,
     EvcNetException,
 )
-from .utils import format_logging_to_markdown, get_total_energy_usage_kwh
+from .utils import get_total_energy_usage_kwh
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
 class EvcSpotData:
-    """Model voor de data van een individuele laadpaal."""
+    """Model for an individual charging station."""
 
     info: dict[str, Any]
     status: dict[str, Any]
@@ -37,7 +38,7 @@ class EvcSpotData:
     selected_card_id: str | None = None
     selected_channel_id: str = "1"
     available_channels: dict[int, str] = field(default_factory=dict)
-    logging: str = ""
+    logging: list[dict[str, Any]] = field(default_factory=list)
 
 
 class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
@@ -151,7 +152,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             selected_card_id = None
             available_channels = {}
             selected_channel_id = "1"
-            logging_data = ""
+            logging_data = []
             status_response = cast(
                 list[list[dict[str, Any]]],
                 await self.client.get_spot_overview(str(spot_id)),
@@ -236,7 +237,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_card_id=None,
                 available_channels={},
                 selected_channel_id="",
-                logging="",
+                logging=[],
             )
 
     async def _async_process_customer_and_cards(
@@ -310,31 +311,40 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 return get_total_energy_usage_kwh(total_energy_list[0])
         return 0.0
 
-    async def _async_get_logging(self, spot_id: str, channel_id: str) -> str:
-        """Get logging data for a spot and channel."""
+    async def _async_get_logging(
+        self, spot_id: str, channel_id: str
+    ) -> list[dict[str, Any]]:
+        """Fetch logs and return a cleaned list of unique dictionaries."""
         try:
             logging_response = cast(
                 list[list[Any]],
                 await self.client.get_spot_log(str(spot_id), channel_id),
             )
 
+            raw_entries = []
             if isinstance(logging_response, list) and len(logging_response) > 0:
-                if (
-                    isinstance(logging_response[0], list)
-                    and len(logging_response[0]) > 0
-                ):
-                    return format_logging_to_markdown(logging_response[0])
-                _LOGGER.debug(
-                    "Logging response for spot %s channel %s is empty or not a list: %s",
-                    spot_id,
-                    channel_id,
-                    logging_response,
-                )
+                inner = logging_response[0]
+                raw_entries = inner if isinstance(inner, list) else []
+
+            seen = set()
+            unique_entries = []
+            for item in raw_entries:
+                if not isinstance(item, dict):
+                    continue
+
+                date_id = item.get("LOG_DATE", "")[:-3]
+                identifier = f"{date_id}|{item.get('NOTIFICATION')}"
+
+                if identifier not in seen:
+                    seen.add(identifier)
+                    unique_entries.append(item)
+
+            return unique_entries[:LOG_ROW_LIMIT]
 
         except EvcNetException as err:
             _LOGGER.debug("Could not fetch logging for spot %s: %s", spot_id, err)
 
-        return ""
+            return []
 
     async def async_poll_spot(self, spot_id: str) -> None:
         """Update only the data for a specific charging spot."""

@@ -67,6 +67,9 @@
       "current_power": {
         "name": "Current Power"
       },
+      "last_logging_update": {
+        "name": "Last Logging Update"
+      },
       "session_energy": {
         "name": "Session Energy"
       },

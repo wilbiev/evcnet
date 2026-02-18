@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import EvcNetConfigEntry
 from .const import EvcNetException
@@ -37,9 +38,6 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         key="status",
         translation_key="status",
         value_fn=lambda data: data.status.get("NOTIFICATION", "Unknown"),
-        attributes_fn=lambda data: {
-            "log_data": data.logging,
-        },
     ),
     EvcNetSensorEntityDescription(
         key="status_code",
@@ -101,6 +99,15 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         value_fn=lambda data: convert_time_to_minutes(
             data.status.get("TRANSACTION_TIME_H_M", "")
         ),
+    ),
+    EvcNetSensorEntityDescription(
+        key="last_logging_update",
+        translation_key="last_logging_update",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda data: dt_util.now(),
+        attributes_fn=lambda data: {
+            "entries": data.logging,
+        },
     ),
 )
 

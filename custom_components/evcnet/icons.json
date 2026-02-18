@@ -35,6 +35,9 @@
       "current_power": {
         "default": "mdi:lightning-bolt"
       },
+      "last_logging_update": {
+        "default": "mdi:history"
+      },
       "session_energy": {
         "default": "mdi:battery-charging"
       },
