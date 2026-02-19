@@ -10,7 +10,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import EvcNetConfigEntry
-from .const import CHARGESPOT_STATUS2_FLAGS
 from .coordinator import EvcNetCoordinator, EvcSpotData
 from .entity import EvcNetEntity
 
@@ -42,23 +41,12 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if charging is active (OCCUPIED bit is set)."""
+        """Return true if charging is active session."""
         spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        if not spot_data or not spot_data.status:
+        if not spot_data:
             return False
 
-        # De coordinator heeft de status al opgehaald
-        status_value = spot_data.status.get("STATUS")
-        if status_value is None:
-            return False
-
-        # Parse de onderste 32 bits (status2) zoals in je originele logica
-        try:
-            hex_status = str(status_value).zfill(16)
-            status2 = int(hex_status[8:], 16)
-            return bool(status2 & CHARGESPOT_STATUS2_FLAGS["OCCUPIED"])
-        except (ValueError, IndexError):
-            return False
+        return spot_data.active_session
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start charging met de geselecteerde pas."""
@@ -91,10 +79,15 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop charging."""
         spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        channel_id = spot_data.selected_channel_id if spot_data else "1"
+        if not spot_data or not spot_data.status:
+            return
+        channel_id = spot_data.selected_channel_id
 
         try:
-            await self.coordinator.client.stop_charging(self._spot_id, channel_id)
+            if spot_data.status.get("STATUS") == "0":
+                await self.coordinator.client.soft_reset(self._spot_id, channel_id)
+            else:
+                await self.coordinator.client.stop_charging(self._spot_id, channel_id)
             await asyncio.sleep(3)
             await self.coordinator.async_request_refresh()
         except Exception as err:
