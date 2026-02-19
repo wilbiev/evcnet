@@ -129,8 +129,8 @@ class EvcNetApiClient:
                         sid = cookies.get("SERVERID")
                         php = cookies.get("PHPSESSID")
                         if sid and php:
-                            self._server_id = sid.value
-                            self._php_sessid = php.value
+                            self._serverid = sid.value
+                            self._phpsessid = php.value
                             _LOGGER.info(
                                 "Successfully completed browser-emulation login"
                             )
