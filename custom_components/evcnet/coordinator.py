@@ -12,6 +12,7 @@ from .api import EvcNetApiClient
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    KEY_CARDID,
     KEY_CARDS_IDX,
     KEY_CUSTOMER_NAME,
     KEY_CUSTOMERS_IDX,
@@ -38,7 +39,6 @@ class EvcSpotData:
     selected_channel_id: str = "1"
     available_channels: dict[int, str] = field(default_factory=dict)
     logging: list[dict[str, Any]] = field(default_factory=list)
-    active_session: bool = False
 
 
 class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
@@ -153,7 +153,6 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             available_channels = {}
             selected_channel_id = "1"
             logging_data = []
-            active_session = False
             status_response = cast(
                 list[list[dict[str, Any]]],
                 await self.client.get_spot_overview(str(spot_id)),
@@ -193,8 +192,6 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                         spot_id, status, old_card_selections
                     )
                     _LOGGER.debug("Status for spot %s: %s", spot_id, status)
-                    if status.get(KEY_CARDS_IDX, "") != "":
-                        active_session = True
             total_energy_usage = await self._async_get_total_energy_usage(spot_id)
             _LOGGER.debug(
                 "Total energy usage for spot %s: %s",
@@ -222,7 +219,6 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 available_channels=available_channels,
                 selected_channel_id=str(selected_channel_id),
                 logging=logging_data,
-                active_session=active_session,
             )
 
         except EvcNetException as err:
@@ -281,13 +277,26 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
                 if not selected_card_id and available_cards:
                     selected_card_id = list(available_cards.values())[0]
+                    status[KEY_CARDS_IDX] = selected_card_id
+                    status[KEY_CARDID] = list(available_cards.keys())[0]
                 elif selected_card_id and available_cards:
                     if selected_card_id not in available_cards.values():
                         selected_card_id = list(available_cards.values())[0]
+                        status[KEY_CARDS_IDX] = selected_card_id
+                        status[KEY_CARDID] = list(available_cards.keys())[0]
                         _LOGGER.info(
                             "Selected card for spot %s was not valid or new. Default selected",
                             spot_id,
                         )
+                    else:
+                        for name, card_id in available_cards.items():
+                            if card_id == selected_card_id:
+                                status[KEY_CARDS_IDX] = selected_card_id
+                                status[KEY_CARDID] = name
+                                break
+            else:
+                status[KEY_CARDS_IDX] = ""
+                status[KEY_CARDID] = ""
 
         return customer_idx, available_cards, selected_card_id
 

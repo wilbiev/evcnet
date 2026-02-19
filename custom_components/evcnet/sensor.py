@@ -51,6 +51,7 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         attributes_fn=lambda data: {
             "spot_id": data.info.get("IDX"),
             "channel": data.status.get("CHANNEL"),
+            "card_idx": data.status.get("CARDS_IDX"),
             "customer_idx": data.status.get("CUSTOMERS_IDX"),
             "customer_name": data.status.get("CUSTOMER_NAME"),
             "software_version": data.info.get("SOFTWARE_VERSION"),

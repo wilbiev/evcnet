@@ -22,6 +22,32 @@ KEY_CUSTOMER_NAME = "CUSTOMER_NAME"
 KEY_CARDS_IDX = "CARDS_IDX"
 KEY_CARDID = "CARDID"
 
+# Attribute names
+ATTR_RECHARGE_SPOT_ID = "recharge_spot_id"
+ATTR_CHANNEL = "channel"
+ATTR_STATUS = "status"
+ATTR_POWER = "power"
+ATTR_ENERGY = "energy"
+ATTR_CUSTOMER_ID = "customer_id"
+ATTR_CARD_ID = "card_id"
+
+# Status flags for bitwise operations
+# Status1 flags (upper 32 bits)
+CHARGESPOT_STATUS1_FLAGS = {
+    "NO_COMMUNICATION": 0x30000000,  # No communication with charging station
+    "FAULT": 0x4000002F,  # Various fault conditions
+}
+
+# Status2 flags (lower 32 bits)
+CHARGESPOT_STATUS2_FLAGS = {
+    "BLOCKED": 0x20000,  # Charging spot is blocked
+    "OCCUPIED": 0x10000,  # Charging spot is occupied
+    "FULL": 0x40000,  # Charging is complete/full
+    "RESERVED": 0x400,  # Charging spot is reserved
+    "FAULT": 0xD8407940,  # Various fault conditions
+}
+# Note: AVAILABLE state is represented by the absence of all status2 flags
+
 
 class EvcNetException(Exception):
     """Base exception for EVC-net."""
