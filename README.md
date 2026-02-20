@@ -81,7 +81,7 @@ For each charging station, the integration creates:
 - **Session Time**: Duration of current charging session in hours
 - **Status Code**: Raw status code from the charging station
 - **Total Energy**: Total energy consumed (kWh)
-- **Last Logging Update**: shows when the logging was updated. Contains attribute **log_data** with logging enties, can be converted to markdown in the dashboard.
+- **Last Logging Update**: shows when the logging was updated. Contains attribute **log_data** with 50 logging entries per channel. Can be converted to markdown in the dashboard to show a list.
 
 ### Switch
 
@@ -104,7 +104,70 @@ data:
   channel_id: "1" # Your channel ID
 ```
 
-**Note**: If you don't specify a `card_id` or `channel_id` in the action, the integration will use the selected values.
+### Tip & tricks
+
+Exclude the sensor Last Logging Update from your recorder in `configuration.yaml`.
+It prevents a severe growth of your Home Assistant database.
+
+```yaml
+recorder:
+  exclude:
+    entities:
+      - sensor.charge_spot_123_last_logging_update
+```
+
+Example of creating of a markdown card on the dashboard (Dutch version)
+
+```yaml
+type: markdown
+content: >-
+  {% set sensor = 'sensor.charge_spot_1234726022_last_logging_update' %}
+
+  {%- set logs = state_attr(sensor, 'entries') -%}
+
+  {%- if logs -%}
+
+  {%- set months = {'jan.': '01', 'feb.': '02', 'mrt.': '03', 'apr.': '04',
+  'mei': '05', 'jun.': '06', 'jul.': '07', 'aug.': '08', 'sep.': '09', 'okt.':
+  '10', 'nov.': '11', 'dec.': '12'} -%}
+
+
+  ### 🕒 Laadhistorie
+
+  > Laatste sync: **{{ as_timestamp(states(sensor)) |
+  timestamp_custom('%H:%M:%S') }}**
+
+
+  | Datum | Melding | Power (kW) | Energy (kWh) | Tijd |
+
+  | :--- | :--- | :---: | :---: | :---: |
+
+  {%- for log in logs[:20] -%}
+    {%- set p = log.LOG_DATE.split('-') -%}
+    {%- if p | length == 3 -%}
+      {%- set dag = p[0].zfill(2) -%}
+      {%- set maand = months.get(p[1].lower(), p[1]) -%}
+      {%- set jt = p[2].split(' ') -%}
+      {%- set jaar = jt[0][-2:] -%}
+      {%- set datum = dag ~ '-' ~ maand ~ '-' ~ jaar ~ ' ' ~ jt[1][:5] -%}
+    {%- else -%}
+      {%- set datum = log.LOG_DATE -%}
+    {%- endif -%}
+  {# 3. De geformatteerde rij weergeven #}
+
+  | {{ datum }} | {{ log.NOTIFICATION | default('-') }} | {{ log.MOM_POWER_KW |
+  default('-') }} | {{ log.TRANS_ENERGY_DELIVERED_KWH | default('-') }} | {{
+  log.TRANSACTION_TIME_H_M | default('-') }} |
+
+  {%- endfor -%}
+
+
+  {%- else -%}
+
+  ⚠️ Geen loggegevens beschikbaar.
+
+  {%- endif -%}
+```
 
 ## Troubleshooting
 
