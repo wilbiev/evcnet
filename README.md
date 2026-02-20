@@ -116,7 +116,7 @@ recorder:
       - sensor.charge_spot_123_last_logging_update
 ```
 
-Example of creating of a markdown card on the dashboard (Dutch version)
+Example of creating of a markdown card on the dashboard to show logging (Dutch version)
 
 ```yaml
 type: markdown
