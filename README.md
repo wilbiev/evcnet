@@ -4,17 +4,21 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 
 ## Disclaimer
 
-**Important Notice**: This integration was developed with the assistance of AI tools, as I have little to no prior experience with Python or Home Assistant integration development. While the code has been tested and appears to function correctly, please use it at your own discretion and report any issues you encounter.
+**Important Notice**: This integration is a based on the code of [Platzii](https://github.com/Platzii/homeassistant-evcnet). Rewriting the code in line with Python and Home Assistant Integration development standards resulted in a large reduction. This integration adds several additional functionalities. Choices can be made out of the available cards and channels per spot which are automatically detected. The integration works for the following 50five EvcNet-endpoints:
 
-**Testing Environment**: This integration has been primarily tested on the 50five (BELUX) endpoint (`50five-sbelux.evc-net.com`) in combination with a Shell Recharge/NewMotion-Enovates EV charger (Home Advanced 3.0). Compatibility with other EVC-net endpoints or charging station models may vary. Users have confirmed that the 50five Germany (`50five-sde.evc-net.com`) and UK (`50five-suk.evc-net.com`) endpoints work as well.
+- BELUX: (`50five-sbelux.evc-net.com`)
+- DE: (`50five-sde.evc-net.com`)
+- NL: (`50five-snl.evc-net.com`)
+- UK (`50five-suk.evc-net.com`)
 
 ## Features
 
+- **Buttons**: Control charging station operations (soft/hard reset, unlock connector, block/unblock)
+- **Selects**: Choose card and channel
 - **Sensors**: Monitor charging status, power consumption, and energy usage
 - **Switch**: Start and stop charging sessions
-- **Buttons**: Control charging station operations (soft/hard reset, unlock connector, block/unblock)
-- **Real-time updates**: Automatic polling every 30 seconds
-- **Action call**: Start a charging session using an action (allows to define a specific RFID card)
+- **Real-time updates**: Automatic polling every 60 seconds
+- **Action call**: Start a charging session using an action (allows to define a specific RFID card and channel id)
 
 ## Installation
 
@@ -32,7 +36,7 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 1. Make sure [HACS](https://hacs.xyz/) is installed
 2. Add this repository as a custom repository in HACS:
    - Go to HACS → Integrations → ⋮ (top right) → Custom repositories
-   - Add `https://github.com/Platzii/homeassistant-evcnet` as Integration
+   - Add `https://github.com/wilbiev/evcnet` as Integration
 3. Click Install
 4. Restart Home Assistant
 
@@ -47,53 +51,41 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 2. Click "+ Add Integration"
 3. Search for "EVC-net (Last Mile Solutions)"
 4. Enter your credentials:
-   - **Base URL**: Default is `https://50five-sbelux.evc-net.com`
+   - **Base URL**: Default is `https://50five-snl.evc-net.com`
    - **Email**: Your EVC-net account email
    - **Password**: Your EVC-net account password
-5. (Optional) Configure your RFID card ID:
-   - **RFID Card ID**: Your charging card ID (e.g., `ABC12DEF34`)
-   - **Customer ID**: Your customer ID (usually optional)
-
-### Finding Your Card ID
-
-You have two options to find your RFID card ID:
-
-**Option 1: From Browser**
-1. Log in to the EVC-net platform (e.g.: https://50five-sbelux.evc-net.com) using your browser
-2. Navigate to Cards
-3. Find your Card ID in the table
-4. Use this when configuring the integration
-
-**Option 2: Auto-detection**
-1. Leave the card ID field blank during setup
-2. Enable debug logging (see Troubleshooting section)
-3. Start a charging session manually (with your RFID card)
-4. Wait 30 seconds for the integration to update
-5. Check the logs - you'll see: `Auto-detected card_id: YOUR_CARD_ID`
-6. The card ID is now cached and you can control charging from HA
 
 ## Available Entities
 
 For each charging station, the integration creates:
 
-### Sensors
-- **Status**: Current charging station status
-- **Status Code**: Raw status code from the charging station
-- **Total Energy**: Total energy consumed (kWh)
-- **Software Version**: Charging station software version
-- **Current Power**: Active power draw in kilowatts
-- **Session Energy**: Energy consumed in current session (kWh)
-- **Session Time**: Duration of current charging session in hours
-
-### Switch
-- **Charging**: Turn on to start charging, off to stop
-
 ### Buttons
+
 - **Soft Reset**: Perform a soft reset on the charging station
 - **Hard Reset**: Perform a hard reset on the charging station
 - **Unlock Connector**: Unlock the connector on the charging station
 - **Block**: Block the charging station from use
 - **Unblock**: Unblock the charging station to allow use
+
+### Selects
+
+- **Card ID**: Select your preferred card from the list
+- **Channel ID**: Select your preferred channel from the list
+
+### Sensors
+
+- **Connector**: Shows connector name. Contains several attributes.
+- **Current Power**: Active power draw in kilowatts
+- **Status**: Current charging station status
+- **Session Energy**: Energy consumed in current session (kWh)
+- **Session Time**: Duration of current charging session in hours
+- **Status Code**: Raw status code from the charging station
+- **Total Energy**: Total energy consumed (kWh)
+- **Last Logging Update**: shows when the logging was updated. Contains attribute **log_data** with logging enties, can be converted to markdown in the dashboard.
+
+### Switch
+
+- **Charging**: Turn on to start charging, off to stop, includes preparation mode
 
 ## Using Multiple RFID Cards
 
@@ -108,43 +100,11 @@ action: evcnet.start_charging
 target:
   entity_id: switch.your_charging_station_charging # or device_id: 516934b04b9345cb26086fdb88de6467
 data:
-  card_id: "ABC12DEF34"  # Your RFID card ID
+  card_id: "ABC12DEF34" # Your RFID card ID
+  channel_id: "1" # Your channel ID
 ```
 
-**Note**: If you don't specify a `card_id` in the action, the integration will use the default card configured in the integration settings.
-
-## Configuration Options
-
-After initial setup, you can modify configuration through the Home Assistant UI:
-
-### Quick Settings (Card ID & Customer ID)
-
-1. Go to **Settings** → **Devices & Services**
-2. Find your **EVC-net** integration
-3. Click the **Configure** button (⚙️)
-4. Update your settings:
-   - **RFID Card ID**: Your charging card ID
-   - **Customer ID**: Your customer ID (optional)
-
-### Change Connection Credentials (URL, Username, Password)
-
-To change your base URL, username, or password:
-
-1. Go to **Settings** → **Devices & Services**
-2. Find your **EVC-net** integration
-3. Click the **Configure** button (⚙️)
-4. Click **"Reconfigure"** at the bottom
-5. Update your credentials:
-   - **Base URL**: Your EVC-net endpoint
-   - **Email**: Your account email
-   - **Password**: Leave blank to keep current password
-
-### Configuration Priority
-
-The integration uses configuration in this order:
-1. **Options** (set via Configure button) - highest priority
-2. **Initial setup** (set during integration setup)
-3. **Auto-detection** (detected from API responses) - fallback
+**Note**: If you don't specify a `card_id` or `channel_id` in the action, the integration will use the selected values.
 
 ## Troubleshooting
 
@@ -159,7 +119,7 @@ logger:
 
 ## Support
 
-Report issues at: https://github.com/Platzii/homeassistant-evcnet/issues
+Report issues at: https://github.com/wilbiev/evcnet/issues
 
 ## License
 
