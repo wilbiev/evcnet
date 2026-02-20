@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import EvcNetConfigEntry
-from .const import CHARGESPOT_STATUS2_FLAGS
+from .const import CHARGESPOT_STATUS2_FLAGS, PREPARE_STATUS_LIST
 from .coordinator import EvcNetCoordinator, EvcSpotData
 from .entity import EvcNetEntity
 
@@ -47,18 +47,22 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         if not spot_data or not spot_data.status:
             return False
 
-        # De coordinator heeft de status al opgehaald
         status_value = spot_data.status.get("STATUS")
-        if status_value is None:
+        if not status_value or not isinstance(status_value, str):
             return False
 
-        # Parse de onderste 32 bits (status2) zoals in je originele logica
-        try:
-            hex_status = str(status_value).zfill(16)
-            status2 = int(hex_status[8:], 16)
-            return bool(status2 & CHARGESPOT_STATUS2_FLAGS["OCCUPIED"])
-        except (ValueError, IndexError):
-            return False
+        if status_value != "0":
+            # Parse the last 32 bits (status2) to check for OCCUPIED flag
+            try:
+                hex_status = str(status_value).zfill(16)
+                status2 = int(hex_status[8:], 16)
+                return bool(status2 & CHARGESPOT_STATUS2_FLAGS["OCCUPIED"])
+            except (ValueError, IndexError):
+                return False
+
+        # Check if the spot is preparing the transaction (light on)
+        last_notify = str(spot_data.status.get("NOTIFICATION", "")).lower()
+        return any(key in last_notify for key in PREPARE_STATUS_LIST)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start charging met de geselecteerde pas."""
@@ -66,7 +70,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         if not spot_data:
             return
 
-        # Get the context from our model (set by the select entity!)
+        # Get the context from the model (set by the select entities!)
         card_id = spot_data.selected_card_id
         customer_id = spot_data.customer_id
         channel_id = spot_data.selected_channel_id
@@ -83,7 +87,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
                 self._spot_id, customer_id, card_id, channel_id
             )
             await asyncio.sleep(3)
-            await self.coordinator.async_request_refresh()
+            await self.coordinator.async_poll_spot(self._spot_id)
         except Exception as err:
             _LOGGER.error("Error when starting charging: %s", err)
             raise
@@ -91,12 +95,18 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop charging."""
         spot_data: EvcSpotData | None = self.coordinator.data.get(self._spot_id)
-        channel_id = spot_data.selected_channel_id if spot_data else "1"
+        if not spot_data or not spot_data.status:
+            return
+        channel_id = spot_data.selected_channel_id
+        last_notify = str(spot_data.status.get("NOTIFICATION", "")).lower()
 
         try:
-            await self.coordinator.client.stop_charging(self._spot_id, channel_id)
+            if any(key in last_notify for key in PREPARE_STATUS_LIST):
+                await self.coordinator.client.soft_reset(self._spot_id, channel_id)
+            else:
+                await self.coordinator.client.stop_charging(self._spot_id, channel_id)
             await asyncio.sleep(3)
-            await self.coordinator.async_request_refresh()
+            await self.coordinator.async_poll_spot(self._spot_id)
         except Exception as err:
             _LOGGER.error("Error when stopping charging: %s", err)
             raise

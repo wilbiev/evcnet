@@ -48,6 +48,13 @@ CHARGESPOT_STATUS2_FLAGS = {
 }
 # Note: AVAILABLE state is represented by the absence of all status2 flags
 
+PREPARE_STATUS_LIST = [
+    "preparing",
+    "transactie voorbereiden",
+    "vorbereitung",
+    "préparation",
+]
+
 
 class EvcNetException(Exception):
     """Base exception for EVC-net."""
