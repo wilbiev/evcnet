@@ -85,7 +85,7 @@ For each charging station, the integration creates:
 
 ### Switch
 
-- **Charging**: Turn on to start charging, off to stop, includes preparation mode
+- **Charging**: Turn on to start charging, off to stop, includes pregit pushparation mode
 
 ## Using Multiple RFID Cards
 

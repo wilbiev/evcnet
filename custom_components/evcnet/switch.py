@@ -37,7 +37,7 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
         super().__init__(coordinator, spot_id)
         self._attr_unique_id = f"{spot_id}_charging_switch"
         self._attr_icon = "mdi:ev-station"
-        self._attr_name = f"Charge Spot {spot_id} Charging"
+        self._attr_name = "Charging"
         self._attr_entity_category = EntityCategory.CONFIG
 
     @property
