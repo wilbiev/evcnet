@@ -1,7 +1,7 @@
 {
   "domain": "evcnet",
   "name": "EVC-net (Last Mile Solutions)",
-  "codeowners": ["@Platzii, @Wilbiev"],
+  "codeowners": ["@Platzii", "@Wilbiev"],
   "config_flow": true,
   "documentation": "https://github.com/Platzii/homeassistant-evcnet",
   "integration_type": "hub",
