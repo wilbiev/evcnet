@@ -104,7 +104,9 @@ data:
   channel_id: "1" # Your channel ID
 ```
 
-### Tip & tricks
+## Tip & tricks
+
+### Logging sensor
 
 Exclude the sensor Last Logging Update from your recorder in `configuration.yaml`.
 It prevents a severe growth of your Home Assistant database.
@@ -116,12 +118,20 @@ recorder:
       - sensor.charge_spot_123_last_logging_update
 ```
 
+### Logging markdown
+
+The following logging fields are available in attribute entries:
+LOG_DATE, NOTIFICATION, EVENT_TYPE, EVENT_DATA, EVENT_SOURCE, STATUS,
+MOM_POWER_KW, SOC, TRANS_ENERGY_DELIVERED_KWH, TRANSACTION_TIME_H_M,
+IS_GLOBAL_EVENT, CARDID, CARD_TYPE_ICON, CUSTOMERS_IDX, CUSTOMER_NAME,
+CARDS_IDX, IS_SELF, IS_GLOBAL_CARD, IDX
+
 Example of creating of a markdown card on the dashboard to show logging (Dutch version)
 
 ```yaml
 type: markdown
 content: >-
-  {% set sensor = 'sensor.charge_spot_1234726022_last_logging_update' %}
+  {% set sensor = 'sensor.charge_spot_xxxxxxxx_last_logging_update' %}
 
   {%- set logs = state_attr(sensor, 'entries') -%}
 
@@ -153,7 +163,7 @@ content: >-
     {%- else -%}
       {%- set datum = log.LOG_DATE -%}
     {%- endif -%}
-  {# 3. De geformatteerde rij weergeven #}
+  {# Weergeven geformatteerde rij #}
 
   | {{ datum }} | {{ log.NOTIFICATION | default('-') }} | {{ log.MOM_POWER_KW |
   default('-') }} | {{ log.TRANS_ENERGY_DELIVERED_KWH | default('-') }} | {{
