@@ -131,7 +131,7 @@ Example of creating of a markdown card on the dashboard to show logging (Dutch v
 ```yaml
 type: markdown
 content: >-
-  {% set sensor = 'sensor.charge_spot_xxxxxxxx_last_logging_update' %}
+  {% set sensor = 'sensor.charge_spot_<YOUR_SPOT_ID>_last_logging_update' %}
 
   {%- set logs = state_attr(sensor, 'entries') -%}
 
@@ -177,6 +177,20 @@ content: >-
   ⚠️ Geen loggegevens beschikbaar.
 
   {%- endif -%}
+```
+
+### Logging template sensor
+
+Create a template sensor with the latest status from the logging in configuration.yaml
+
+```yaml
+template:
+  -sensor:
+    - name: "Last logging status"
+      state: >
+        {% set sensor = 'sensor.charge_spot_<YOUR_SPOT_ID>_last_logging_update' %}
+        {% set logs = state_attr(sensor, 'entries') %}
+        {{ logs[0].NOTIFICATION }}
 ```
 
 ## Troubleshooting
