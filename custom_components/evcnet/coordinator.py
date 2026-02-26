@@ -332,12 +332,31 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 if not isinstance(item, dict):
                     continue
 
-                date_id = item.get("LOG_DATE", "")[:-3]
-                identifier = f"{date_id}|{item.get('NOTIFICATION')}"
+                identifier = f"{item.get('NOTIFICATION')}|{item.get('MOM_POWER_KW')}|{item.get('TRANS_ENERGY_DELIVERED_KWH')}"
 
                 if identifier not in seen:
                     seen.add(identifier)
-                    unique_entries.append(item)
+                    compressed_item = {
+                        "DAT": item.get("LOG_DATE"),
+                        "NOT": item.get("NOTIFICATION"),
+                        "EVT": item.get("EVENT_TYPE"),
+                        "EVD": item.get("EVENT_DATA"),
+                        "EVS": item.get("EVENT_SOURCE"),
+                        "STA": item.get("STATUS"),
+                        "PWR": item.get("MOM_POWER_KW"),
+                        "SOC": item.get("SOC"),
+                        "ENG": item.get("TRANS_ENERGY_DELIVERED_KWH"),
+                        "TTM": item.get("TRANSACTION_TIME_H_M"),
+                        "IGE": item.get("IS_GLOBAL_EVENT"),
+                        "CDI": item.get("CARDS_IDX"),
+                        "CDN": item.get("CARDID"),
+                        "CSI": item.get("CUSTOMERS_IDX"),
+                        "CSN": item.get("CUSTOMER_NAME"),
+                        "ISF": item.get("IS_SELF"),
+                        "IGC": item.get("IS_GLOBAL_CARD"),
+                        "IDX": item.get("IDX"),
+                    }
+                    unique_entries.append(compressed_item)
 
             return unique_entries[:LOG_ROW_LIMIT]
 
