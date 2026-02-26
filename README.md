@@ -103,27 +103,26 @@ Logging data is stored in attribute **entries** of sensor **Last Logging Update*
 The logging data is based on unique entities of the following keys: LOG_DATE (date/hours), NOTIFICATION, MOM_POWER_KW, TRANS_ENERGY_DELIVERED_KWH
 To reduce the logging size the key names are converted to a condensed format
 
-|----------------------------------|
-| Key | Full key name |
-|-----|----------------------------|
-| DAT | LOG_DATE |
-| NOT | NOTIFICATION |
-| EVT | EVENT_TYPE |
-| EVD | EVENT_DATA |
-| EVS | EVENT_SOURCE |
-| STA | STATUS |
-| PWR | MOM_POWER_KW |
-| SOC | SOC |
+| Key | Full key name              |
+| --- | -------------------------- |
+| DAT | LOG_DATE                   |
+| NOT | NOTIFICATION               |
+| EVT | EVENT_TYPE                 |
+| EVD | EVENT_DATA                 |
+| EVS | EVENT_SOURCE               |
+| STA | STATUS                     |
+| PWR | MOM_POWER_KW               |
+| SOC | SOC                        |
 | ENG | TRANS_ENERGY_DELIVERED_KWH |
-| TTM | TRANSACTION_TIME_H_M |
-| IGE | IS_GLOBAL_EVENT |
-| CDI | CARDS_IDX |
-| CDN | CARDID |
-| CSI | CUSTOMERS_IDX |
-| CSN | CUSTOMER_NAME |
-| ISF | IS_SELF |
-| IGC | IS_GLOBAL_CARD |
-| IDX | IDX |
+| TTM | TRANSACTION_TIME_H_M       |
+| IGE | IS_GLOBAL_EVENT            |
+| CDI | CARDS_IDX                  |
+| CDN | CARDID                     |
+| CSI | CUSTOMERS_IDX              |
+| CSN | CUSTOMER_NAME              |
+| ISF | IS_SELF                    |
+| IGC | IS_GLOBAL_CARD             |
+| IDX | IDX                        |
 
 Exclude the sensor Last Logging Update from your recorder in `configuration.yaml`.
 It prevents a severe growth of your Home Assistant database.
