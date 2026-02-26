@@ -100,8 +100,9 @@ data:
 ### Logging sensor
 
 Logging data is stored in attribute **entries** of sensor **Last Logging Update**
-The logging data is based on unique entities of the following keys: LOG_DATE (date/hours), NOTIFICATION, MOM_POWER_KW, TRANS_ENERGY_DELIVERED_KWH
-To reduce the logging size the key names are converted to a condensed format
+The logging data is based on unique entities of the following keys: LOG_DATE (date/hours), NOTIFICATION, MOM_POWER_KW, TRANS_ENERGY_DELIVERED_KWH.
+
+To reduce the logging size the key names are converted to a condensed format.
 
 | Key | Full key name              |
 | --- | -------------------------- |
