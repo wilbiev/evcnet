@@ -22,16 +22,7 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 
 ## Installation
 
-### HACS default repository (Recommended)
-
-1. Make sure [HACS](https://hacs.xyz/) is installed
-2. In HACS, search for "EVC-net (Last Mile Solutions)"
-3. Open the overflow menu (⋮) and click "Download"
-4. In the pop-up, you can select a specific version to install, or leave it empty to install the latest version
-5. Click "Download" to install the integration
-6. Restart Home Assistant
-
-### HACS custom repository
+### HACS custom repository (recommended)
 
 1. Make sure [HACS](https://hacs.xyz/) is installed
 2. Add this repository as a custom repository in HACS:
@@ -81,7 +72,7 @@ For each charging station, the integration creates:
 - **Session Time**: Duration of current charging session in hours
 - **Status Code**: Raw status code from the charging station
 - **Total Energy**: Total energy consumed (kWh)
-- **Last Logging Update**: shows when the logging was updated. Contains attribute **log_data** with 50 logging entries per channel. Can be converted to markdown in the dashboard to show a list.
+- **Last Logging Update**: shows when the logging was updated. Contains attribute **entries** with 50 logging entries per channel. Can be converted to markdown in the dashboard to show a list.
 
 ### Switch
 
@@ -108,6 +99,32 @@ data:
 
 ### Logging sensor
 
+Logging data is stored in attribute **entries** of sensor **Last Logging Update**
+The logging data is based on unique entities of the following keys: LOG_DATE (date/hours), NOTIFICATION, MOM_POWER_KW, TRANS_ENERGY_DELIVERED_KWH
+To reduce the logging size the key names are converted to a condensed format
+
+|----------------------------------|
+| Key | Full key name |
+|-----|----------------------------|
+| DAT | LOG_DATE |
+| NOT | NOTIFICATION |
+| EVT | EVENT_TYPE |
+| EVD | EVENT_DATA |
+| EVS | EVENT_SOURCE |
+| STA | STATUS |
+| PWR | MOM_POWER_KW |
+| SOC | SOC |
+| ENG | TRANS_ENERGY_DELIVERED_KWH |
+| TTM | TRANSACTION_TIME_H_M |
+| IGE | IS_GLOBAL_EVENT |
+| CDI | CARDS_IDX |
+| CDN | CARDID |
+| CSI | CUSTOMERS_IDX |
+| CSN | CUSTOMER_NAME |
+| ISF | IS_SELF |
+| IGC | IS_GLOBAL_CARD |
+| IDX | IDX |
+
 Exclude the sensor Last Logging Update from your recorder in `configuration.yaml`.
 It prevents a severe growth of your Home Assistant database.
 
@@ -120,13 +137,7 @@ recorder:
 
 ### Logging markdown
 
-The following logging fields are available in attribute entries:
-LOG_DATE, NOTIFICATION, EVENT_TYPE, EVENT_DATA, EVENT_SOURCE, STATUS,
-MOM_POWER_KW, SOC, TRANS_ENERGY_DELIVERED_KWH, TRANSACTION_TIME_H_M,
-IS_GLOBAL_EVENT, CARDID, CARD_TYPE_ICON, CUSTOMERS_IDX, CUSTOMER_NAME,
-CARDS_IDX, IS_SELF, IS_GLOBAL_CARD, IDX
-
-Example of creating of a markdown card on the dashboard to show logging (Dutch version)
+Example of creating of a markdown card on the dashboard to show logging
 
 ```yaml
 type: markdown
@@ -142,39 +153,39 @@ content: >-
   '10', 'nov.': '11', 'dec.': '12'} -%}
 
 
-  ### 🕒 Laadhistorie
+  ### 🕒 Charging history
 
-  > Laatste sync: **{{ as_timestamp(states(sensor)) |
+  > Last sync: **{{ as_timestamp(states(sensor)) |
   timestamp_custom('%H:%M:%S') }}**
 
 
-  | Datum | Melding | Power (kW) | Energy (kWh) | Tijd |
+  | Date | Message | Power (kW) | Energy (kWh) | Time |
 
   | :--- | :--- | :---: | :---: | :---: |
 
   {%- for log in logs[:20] -%}
-    {%- set p = log.LOG_DATE.split('-') -%}
+    {%- set p = log.DAT.split('-') -%}
     {%- if p | length == 3 -%}
-      {%- set dag = p[0].zfill(2) -%}
-      {%- set maand = months.get(p[1].lower(), p[1]) -%}
-      {%- set jt = p[2].split(' ') -%}
-      {%- set jaar = jt[0][-2:] -%}
-      {%- set datum = dag ~ '-' ~ maand ~ '-' ~ jaar ~ ' ' ~ jt[1][:5] -%}
+      {%- set day = p[0].zfill(2) -%}
+      {%- set month = months.get(p[1].lower(), p[1]) -%}
+      {%- set yr = p[2].split(' ') -%}
+      {%- set year = yr[0][-2:] -%}
+      {%- set date = day ~ '-' ~ month ~ '-' ~ year ~ ' ' ~ yr[1][:5] -%}
     {%- else -%}
-      {%- set datum = log.LOG_DATE -%}
+      {%- set date = log.DAT -%}
     {%- endif -%}
-  {# Weergeven geformatteerde rij #}
+  {# Show formatted row #}
 
-  | {{ datum }} | {{ log.NOTIFICATION | default('-') }} | {{ log.MOM_POWER_KW |
-  default('-') }} | {{ log.TRANS_ENERGY_DELIVERED_KWH | default('-') }} | {{
-  log.TRANSACTION_TIME_H_M | default('-') }} |
+  | {{ date }} | {{ log.NOT | default('-') }} | {{ log.PWR |
+  default('-') }} | {{ log.ENG | default('-') }} | {{
+  log.TTM | default('-') }} |
 
   {%- endfor -%}
 
 
   {%- else -%}
 
-  ⚠️ Geen loggegevens beschikbaar.
+  ⚠️ No logging data available.
 
   {%- endif -%}
 ```
@@ -190,7 +201,7 @@ template:
       state: >
         {% set sensor = 'sensor.charge_spot_<YOUR_SPOT_ID>_last_logging_update' %}
         {% set logs = state_attr(sensor, 'entries') %}
-        {{ logs[0].NOTIFICATION }}
+        {{ logs[0].NOT }}
 ```
 
 ## Troubleshooting

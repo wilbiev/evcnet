@@ -332,7 +332,8 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 if not isinstance(item, dict):
                     continue
 
-                identifier = f"{item.get('NOTIFICATION')}|{item.get('MOM_POWER_KW')}|{item.get('TRANS_ENERGY_DELIVERED_KWH')}"
+                date_id = item.get("LOG_DATE", "")[:-6]
+                identifier = f"{date_id}|{item.get('NOTIFICATION')}|{item.get('MOM_POWER_KW')}|{item.get('TRANS_ENERGY_DELIVERED_KWH')}"
 
                 if identifier not in seen:
                     seen.add(identifier)
