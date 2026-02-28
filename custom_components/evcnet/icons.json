@@ -53,6 +53,11 @@
       "total_energy_usage": {
         "default": "mdi:flash"
       }
+    },
+    "switch": {
+      "charging": {
+        "default": "mdi:ev-station"
+      }
     }
   }
 }

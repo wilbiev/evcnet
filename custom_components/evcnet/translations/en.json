@@ -85,6 +85,11 @@
       "total_energy_usage": {
         "name": "Total Energy Usage"
       }
+    },
+    "switch": {
+      "charging": {
+        "name": "Charging"
+      }
     }
   }
 }
