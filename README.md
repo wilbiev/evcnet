@@ -89,7 +89,7 @@ You can use the `evcnet.start_charging` action to specify which RFID card to use
 ```yaml
 action: evcnet.start_charging
 target:
-  entity_id: switch.your_charging_station_charging # or device_id: 516934b04b9345cb26086fdb88de6467
+  entity_id: switch.charge_spot_<YOUR_SPOT_ID>_charging # or device_id: 516934b04b9345cb26086fdb88de6467
 data:
   card_id: "ABC12DEF34" # Your RFID card ID
   channel_id: "1" # Your channel ID
@@ -132,7 +132,7 @@ It prevents a severe growth of your Home Assistant database.
 recorder:
   exclude:
     entities:
-      - sensor.charge_spot_123_last_logging_update
+      - sensor.charge_spot_<YOUR_SPOT_ID>_last_logging_update
 ```
 
 ### Logging markdown
