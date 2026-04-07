@@ -157,7 +157,7 @@ class EvcNetApiClient:
 
         cookies = {
             "PHPSESSID": self._phpsessid,
-            "SERVERID": self._serverid if self._serverid else "",
+            "SERVERID": self._serverid or "",
         }
 
         # Convert requests payload to JSON string and send as form data
