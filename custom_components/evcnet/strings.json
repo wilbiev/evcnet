@@ -5,7 +5,7 @@
         "title": "Connect to EVC-net",
         "description": "Enter your EVC-net (Last Mile Solutions) account credentials.",
         "data": {
-          "base_url": "Portal URL (e.g., https://50five-snl.evc-net.com)",
+          "base_url": "Portal URL (e.g., `https://50five-snl.evc-net.com)`",
           "username": "Email",
           "password": "Password"
         }
