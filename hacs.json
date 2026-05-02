@@ -1,8 +1,7 @@
 {
   "name": "EVC-net (Last Mile Solutions)",
+  "content_in_root": false,
   "render_readme": true,
   "homeassistant": "2025.12.3",
-  "zip_release": true,
-  "filename": "evcnet.zip",
   "hacs": "2.0.5"
 }
