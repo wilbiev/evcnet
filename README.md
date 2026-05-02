@@ -6,10 +6,12 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 
 **Important Notice**: This integration is a based on the code of [Platzii](https://github.com/Platzii/homeassistant-evcnet). Rewriting the code in line with Python and Home Assistant Integration development standards resulted in a large reduction. This integration adds several additional functionalities. Choices can be made out of the available cards and channels per spot which are automatically detected. The integration works for the following 50five EvcNet-endpoints:
 
+- AT: (`50five-sat.evc-net.com`)
 - BELUX: (`50five-sbelux.evc-net.com`)
 - DE: (`50five-sde.evc-net.com`)
+- FR: (`capbornes.evc-net.com`)
 - NL: (`50five-snl.evc-net.com`)
-- UK (`50five-suk.evc-net.com`)
+- UK: (`50five-suk.evc-net.com`)
 
 ## Features
 

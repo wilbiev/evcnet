@@ -188,6 +188,8 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
+".github/*.py" = ["INP001"]
+"scripts/*.py" = ["INP001"]
 
 # Allow for main entry & scripts to write to stdout
 "scripts/*" = ["T20"]

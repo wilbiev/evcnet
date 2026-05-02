@@ -16,6 +16,8 @@ from .const import CONF_BASE_URL, DEFAULT_BASE_URL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+EVCNET_URL = "https://50five-snl.evc-net.com"
+
 # Scheme for the user input during the config flow
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -75,7 +77,7 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
-            description_placeholders={"info": "Enter your EVC-net account credentials"},
+            description_placeholders={"evcnet_url": EVCNET_URL},
         )
 
     async def async_step_reconfigure(
