@@ -38,6 +38,7 @@ class EvcSpotData:
     selected_card_id: str | None = None
     selected_channel_id: str = "1"
     available_channels: dict[int, str] = field(default_factory=dict)
+    channel_statuses: dict[str, dict[str, Any]] = field(default_factory=dict)
     logging: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -152,6 +153,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             selected_card_id = None
             available_channels = {}
             selected_channel_id = "1"
+            channel_statuses = {}
             logging_data = []
             status_response = cast(
                 list[list[dict[str, Any]]],
@@ -162,8 +164,10 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 for index, channel_info in enumerate(status_response[0]):
                     channel_name = str(channel_info.get("CHANNEL", index + 1))
                     available_channels[index] = channel_name
+                    channel_statuses[channel_name] = channel_info
                 if not available_channels:
                     available_channels = {0: "1"}
+                    channel_statuses["1"] = {}
                 selected_channel_id = old_channel_selections.get(spot_id)
                 if selected_channel_id not in available_channels.values():
                     selected_channel_id = list(available_channels.values())[0]
@@ -218,6 +222,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_card_id=selected_card_id,
                 available_channels=available_channels,
                 selected_channel_id=str(selected_channel_id),
+                channel_statuses=channel_statuses,
                 logging=logging_data,
             )
 
@@ -237,6 +242,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_card_id=None,
                 available_channels={},
                 selected_channel_id="",
+                channel_statuses={},
                 logging=[],
             )
 
