@@ -1,7 +1,9 @@
 """API client for EVC-net charging stations."""
 
+from html.parser import HTMLParser
 import json
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -10,6 +12,41 @@ from yarl import URL
 from .const import AJAX_ENDPOINT, LOGIN_ENDPOINT, EvcNetException
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class AuthenticationError(Exception):
+    """The user must complete the EVC-net authentication flow."""
+
+
+class TwoFactorRequired(AuthenticationError):
+    """The server is waiting for an email verification code."""
+
+
+class InvalidOtp(AuthenticationError):
+    """The verification code was rejected."""
+
+
+class ApiError(Exception):
+    """Unexpected server response while authenticating or fetching data."""
+
+
+class _TokenParser(HTMLParser):
+    """Extract the hidden CSRF token from an EVC-net HTML form."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.token: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        fields = dict(attrs)
+        input_type = fields.get("type")
+        if (
+            tag == "input"
+            and fields.get("name") == "_token"
+            and isinstance(input_type, str)
+            and input_type.lower() == "hidden"
+        ):
+            self.token = fields.get("value")
 
 
 class EvcNetApiClient:
@@ -30,9 +67,40 @@ class EvcNetApiClient:
         self._is_authenticated = False
         self._phpsessid = None
         self._serverid = None
+        self._token: str | None = None
+
+    def _store_session_cookies(self) -> None:
+        """Persist the authenticated PHPSESSID and SERVERID values from the cookie jar."""
+        if not hasattr(self.session, "cookie_jar") or self.session.cookie_jar is None:
+            return
+
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.base_url))
+        for cookie in cookies.values():
+            if cookie.key == "PHPSESSID":
+                self._phpsessid = cookie.value
+                _LOGGER.debug("Found PHPSESSID in cookie jar")
+            elif cookie.key == "SERVERID":
+                self._serverid = cookie.value
+                _LOGGER.debug("Found SERVERID in cookie jar")
+
+    @staticmethod
+    def _has_2fa_challenge(location: str, response_text: str) -> bool:
+        """Return True when the server response indicates an email verification step."""
+        content = f"{location} {response_text}".lower()
+        markers = (
+            "/2fa",
+            "/2fa_check",
+            "verifyotp",
+            "_auth_code",
+            'name="_token"',
+            "name='_token'",
+            "verification code",
+            "email verification",
+        )
+        return any(marker in content for marker in markers)
 
     async def authenticate(self) -> bool:
-        """Authenticate with EVC-net. First standard method, then fallback to browser emulation if needed."""
+        """Authenticate with EVC-net, including the email 2FA challenge if required."""
         _LOGGER.debug("Start authentication process")
 
         if await self._standard_login():
@@ -40,6 +108,24 @@ class EvcNetApiClient:
         _LOGGER.info("Standard login failed, switching to browser emulation fallback")
 
         return await self._browser_emulation_login()
+
+    async def _fetch_otp_token(self) -> None:
+        """Fetch the 2FA challenge page and extract its CSRF token."""
+        url = f"{self.base_url}/2fa"
+        try:
+            async with self.session.get(url, allow_redirects=True) as response:
+                body = await response.text()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error while requesting the 2FA form: %s", err)
+            raise AuthenticationError("Could not fetch the 2FA challenge") from err
+
+        parser = _TokenParser()
+        parser.feed(body)
+        if not parser.token:
+            raise AuthenticationError(
+                "The EVC-net 2FA form did not include a CSRF token"
+            )
+        self._token = parser.token
 
     async def _standard_login(self) -> bool:
         """Standard authentication with the EVC-net API."""
@@ -51,28 +137,21 @@ class EvcNetApiClient:
         }
 
         try:
-            # Don't follow redirects automatically, we need to capture cookies
             async with self.session.post(
                 url,
                 data=data,
-                allow_redirects=False,  # Don't follow redirects
+                allow_redirects=False,
             ) as response:
                 _LOGGER.debug("Login response status: %s", response.status)
+                location = str(response.headers.get("Location", "")).lower()
+                response_text = await response.text()
 
-                # Login returns 302 redirect
+                if self._has_2fa_challenge(location, response_text):
+                    await self._fetch_otp_token()
+                    raise TwoFactorRequired("Email verification required")
+
                 if response.status == 302:
-                    # Only method that works with multiple cookies: From cookie jar (HASS session has cookie support)
-                    if hasattr(self.session, "cookie_jar"):
-                        cookies = self.session.cookie_jar.filter_cookies(
-                            URL(self.base_url)
-                        )
-                        for cookie in cookies.values():
-                            if cookie.key == "PHPSESSID":
-                                self._phpsessid = cookie.value
-                                _LOGGER.debug("Found PHPSESSID in cookie jar")
-                            if cookie.key == "SERVERID":
-                                self._serverid = cookie.value
-                                _LOGGER.debug("Found SERVERID in cookie jar")
+                    self._store_session_cookies()
 
                     if self._phpsessid:
                         self._is_authenticated = True
@@ -100,13 +179,11 @@ class EvcNetApiClient:
             return False
 
     async def _browser_emulation_login(self) -> bool:
-        """Browser-emulation login, uses multipart/form-data andn session-cookies."""
+        """Browser-emulation login, uses multipart/form-data and session-cookies."""
         url_login = f"{self.base_url}{LOGIN_ENDPOINT}"
 
         try:
-            # We use a session to catch SERVERID and PHPSESSID
             async with aiohttp.ClientSession() as session:
-                # Get the initial SERVERID cookie
                 async with session.get(url_login) as resp:
                     await resp.text()
 
@@ -124,6 +201,12 @@ class EvcNetApiClient:
                 async with session.post(
                     url_login, data=data, headers=headers, allow_redirects=False
                 ) as resp:
+                    location = str(resp.headers.get("Location", "")).lower()
+                    response_text = await resp.text()
+                    if self._has_2fa_challenge(location, response_text):
+                        await self._fetch_otp_token()
+                        raise TwoFactorRequired("Email verification required")
+
                     if resp.status in [302, 307]:
                         cookies = session.cookie_jar.filter_cookies(URL(url_login))
                         sid = cookies.get("SERVERID")
@@ -142,6 +225,57 @@ class EvcNetApiClient:
         else:
             _LOGGER.error("Browser-emulation login failed: no valid cookies received")
             return False
+
+    async def verify_otp(self, code: str) -> bool:
+        """Submit a six-digit email OTP challenge code."""
+        if not re.fullmatch(r"[0-9]{6}", code):
+            raise InvalidOtp("Enter a valid six-digit verification code")
+
+        if not self._token:
+            raise AuthenticationError(
+                "Restart the login flow to request a verification code"
+            )
+
+        form = aiohttp.FormData()
+        form.add_field("_token", self._token)
+        form.add_field("_auth_code", code)
+        form.add_field("VerifyOtp", "Verify")
+
+        try:
+            async with self.session.post(
+                f"{self.base_url}/2fa_check",
+                data=form,
+                headers={
+                    "Origin": self.base_url,
+                    "Referer": f"{self.base_url}/2fa",
+                },
+                allow_redirects=False,
+            ) as response:
+                location = str(response.headers.get("Location", "")).lower()
+                response_text = await response.text()
+                if response.status in (302, 303):
+                    if "/overview" in location or location in ("/", ""):
+                        self._store_session_cookies()
+                        self._is_authenticated = True
+                        self._token = None
+                        return True
+
+                    if self._has_2fa_challenge(location, response_text):
+                        await self._fetch_otp_token()
+                        raise InvalidOtp("Verification code rejected or expired")
+
+                    raise AuthenticationError(
+                        "Verification session expired; restart login"
+                    )
+
+                if response.status in (200, 400, 403, 422):
+                    await self._fetch_otp_token()
+                    raise InvalidOtp("Verification code rejected or expired")
+
+                raise ApiError(f"Unexpected verification response: {response.status}")
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error while submitting the verification code: %s", err)
+            raise AuthenticationError("Could not verify the code") from err
 
     async def _make_ajax_request(self, requests_payload: dict) -> dict[str, Any]:
         """Make an AJAX request to the EVC-net API."""
