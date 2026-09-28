@@ -69,6 +69,63 @@ class EvcNetApiClient:
         self._serverid = None
         self._token: str | None = None
 
+    @property
+    def is_authenticated(self) -> bool:
+        """Return whether the client has a usable authenticated session."""
+        return self._is_authenticated
+
+    def export_cookies(self) -> list[dict[str, Any]]:
+        """Return the current session cookies in a JSON-safe structure."""
+        cookies: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        if hasattr(self.session, "cookie_jar") and self.session.cookie_jar is not None:
+            for cookie in self.session.cookie_jar.filter_cookies(
+                URL(self.base_url)
+            ).values():
+                if not hasattr(cookie, "key") or not hasattr(cookie, "value"):
+                    continue
+                cookies.append({"name": cookie.key, "value": cookie.value})
+                seen.add(cookie.key)
+
+        for name, value in (
+            ("PHPSESSID", self._phpsessid),
+            ("SERVERID", self._serverid),
+        ):
+            if value and name not in seen:
+                cookies.append({"name": name, "value": value})
+                seen.add(name)
+
+        return cookies
+
+    def restore_cookies(self, cookies: list[dict[str, Any]] | None) -> None:
+        """Restore a previously exported cookie jar without reusing the shared HA jar."""
+        if not hasattr(self.session, "cookie_jar") or self.session.cookie_jar is None:
+            return
+
+        self.session.cookie_jar.clear()
+        self._is_authenticated = False
+        self._phpsessid = None
+        self._serverid = None
+
+        if not cookies:
+            return
+
+        for item in cookies:
+            if not isinstance(item, dict) or "name" not in item or "value" not in item:
+                continue
+
+            name = item["name"]
+            value = item["value"]
+            self.session.cookie_jar.update_cookies({name: value}, URL(self.base_url))
+
+            if name == "PHPSESSID":
+                self._phpsessid = value
+            elif name == "SERVERID":
+                self._serverid = value
+
+        self._is_authenticated = bool(self._phpsessid)
+
     def _store_session_cookies(self) -> None:
         """Persist the authenticated PHPSESSID and SERVERID values from the cookie jar."""
         if not hasattr(self.session, "cookie_jar") or self.session.cookie_jar is None:
@@ -127,6 +184,19 @@ class EvcNetApiClient:
             )
         self._token = parser.token
 
+    async def _check_dashboard_for_otp(self) -> None:
+        """Some EVC-net deployments redirect to /Overview before enforcing OTP."""
+        url = f"{self.base_url}/Overview"
+        try:
+            async with self.session.get(url, allow_redirects=False) as response:
+                location = str(response.headers.get("Location", "")).lower()
+                response_text = await response.text()
+                if self._has_2fa_challenge(location, response_text):
+                    await self._fetch_otp_token()
+                    raise TwoFactorRequired("Email verification required")
+        except aiohttp.ClientError as err:
+            _LOGGER.warning("Could not validate dashboard challenge state: %s", err)
+
     async def _standard_login(self) -> bool:
         """Standard authentication with the EVC-net API."""
         url = f"{self.base_url}{LOGIN_ENDPOINT}"
@@ -154,6 +224,7 @@ class EvcNetApiClient:
                     self._store_session_cookies()
 
                     if self._phpsessid:
+                        await self._check_dashboard_for_otp()
                         self._is_authenticated = True
                         _LOGGER.info("Successfully authenticated with EVC-net")
                         _LOGGER.debug("PHPSESSID: %s", self._phpsessid[:10] + "...")
@@ -214,6 +285,7 @@ class EvcNetApiClient:
                         if sid and php:
                             self._serverid = sid.value
                             self._phpsessid = php.value
+                            await self._check_dashboard_for_otp()
                             _LOGGER.info(
                                 "Successfully completed browser-emulation login"
                             )
@@ -291,7 +363,7 @@ class EvcNetApiClient:
 
         cookies = {
             "PHPSESSID": self._phpsessid,
-            "SERVERID": self._serverid if self._serverid else "",
+            "SERVERID": self._serverid or "",
         }
 
         # Convert requests payload to JSON string and send as form data

@@ -1,7 +1,5 @@
 """Config flow voor EVC-net."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -9,10 +7,10 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AuthenticationError, EvcNetApiClient, InvalidOtp, TwoFactorRequired
 from .const import CONF_BASE_URL, DEFAULT_BASE_URL, DOMAIN
+from .session import create_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +35,7 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize config flow state for optional 2FA challenge handling."""
         self._pending_user_input: dict[str, Any] | None = None
         self._client: EvcNetApiClient | None = None
+        self._save: Any | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -50,13 +49,7 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 try:
-                    session = async_get_clientsession(self.hass)
-                    self._client = EvcNetApiClient(
-                        user_input[CONF_BASE_URL],
-                        user_input[CONF_USERNAME],
-                        user_input[CONF_PASSWORD],
-                        session,
-                    )
+                    self._client, _, self._save = create_client(self.hass, user_input)
 
                     try:
                         await self._client.authenticate()
@@ -66,6 +59,8 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     except AuthenticationError:
                         errors["base"] = "invalid_auth"
                     else:
+                        if self._save is not None:
+                            await self._save(self._client.export_cookies())
                         await self.async_set_unique_id(
                             user_input[CONF_USERNAME].lower()
                         )
@@ -107,6 +102,8 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during OTP verification")
                 errors["base"] = "unknown"
             else:
+                if self._save is not None:
+                    await self._save(self._client.export_cookies())
                 data = self._pending_user_input
                 await self.async_set_unique_id(data[CONF_USERNAME].lower())
                 self._abort_if_unique_id_configured()
