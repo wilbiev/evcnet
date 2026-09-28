@@ -1,7 +1,5 @@
 """Config flow voor EVC-net."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -9,10 +7,10 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import EvcNetApiClient
+from .api import AuthenticationError, EvcNetApiClient, InvalidOtp, TwoFactorRequired
 from .const import CONF_BASE_URL, DEFAULT_BASE_URL, DOMAIN
+from .session import create_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +31,12 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize config flow state for optional 2FA challenge handling."""
+        self._pending_user_input: dict[str, Any] | None = None
+        self._client: EvcNetApiClient | None = None
+        self._save: Any | None = None
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -40,25 +44,23 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate URL format
             if not user_input[CONF_BASE_URL].startswith(("http://", "https://")):
                 errors["base_url"] = "invalid_url"
 
             if not errors:
                 try:
-                    # Test the connection
-                    session = async_get_clientsession(self.hass)
-                    client = EvcNetApiClient(
-                        user_input[CONF_BASE_URL],
-                        user_input[CONF_USERNAME],
-                        user_input[CONF_PASSWORD],
-                        session,
-                    )
+                    self._client, _, self._save = create_client(self.hass, user_input)
 
-                    if not await client.authenticate():
+                    try:
+                        await self._client.authenticate()
+                    except TwoFactorRequired:
+                        self._pending_user_input = user_input
+                        return await self.async_step_otp()
+                    except AuthenticationError:
                         errors["base"] = "invalid_auth"
                     else:
-                        # Create unique ID based on username
+                        if self._save is not None:
+                            await self._save(self._client.export_cookies())
                         await self.async_set_unique_id(
                             user_input[CONF_USERNAME].lower()
                         )
@@ -78,6 +80,45 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
             description_placeholders={"evcnet_url": EVCNET_URL},
+        )
+
+    async def async_step_otp(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle the email verification code challenge."""
+        errors: dict[str, str] = {}
+
+        if self._client is None or self._pending_user_input is None:
+            return self.async_abort(reason="challenge_expired")
+
+        if user_input is not None:
+            try:
+                await self._client.verify_otp(user_input["otp"])
+            except InvalidOtp:
+                errors["base"] = "invalid_otp"
+            except AuthenticationError:
+                return self.async_abort(reason="challenge_expired")
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected error during OTP verification")
+                errors["base"] = "unknown"
+            else:
+                if self._save is not None:
+                    await self._save(self._client.export_cookies())
+                data = self._pending_user_input
+                await self.async_set_unique_id(data[CONF_USERNAME].lower())
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=data[CONF_USERNAME],
+                    data=data,
+                )
+
+        return self.async_show_form(
+            step_id="otp",
+            data_schema=vol.Schema({vol.Required("otp"): str}),
+            errors=errors,
+            description_placeholders={
+                "username": self._pending_user_input[CONF_USERNAME]
+            },
         )
 
     async def async_step_reconfigure(

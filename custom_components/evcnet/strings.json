@@ -18,16 +18,25 @@
           "username": "Email",
           "password": "Password"
         }
+      },
+      "otp": {
+        "title": "Verify your EVC-net email code",
+        "description": "Enter the 6-digit code sent to your email address for {username}.",
+        "data": {
+          "otp": "Verification code"
+        }
       }
     },
     "error": {
       "invalid_auth": "Invalid username or password",
       "cannot_connect": "Cannot connect to EVC-net",
       "invalid_url": "Invalid URL format. Use http:// or https://",
+      "invalid_otp": "Invalid or expired verification code",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
       "already_configured": "This account is already configured",
+      "challenge_expired": "The verification challenge expired. Please start the setup again.",
       "reconfigure_successful": "Reconfiguration successful"
     }
   },

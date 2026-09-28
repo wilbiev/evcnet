@@ -6,13 +6,12 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import EvcNetApiClient
 from .const import CONF_BASE_URL, DOMAIN, EvcNetException
 from .coordinator import EvcNetCoordinator
+from .session import create_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,13 +51,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
             return False
 
     # Initialize API Client & Coordinator
-    session = async_get_clientsession(hass)
-    client = EvcNetApiClient(
-        entry.data[CONF_BASE_URL],
-        entry.data[CONF_USERNAME],
-        entry.data[CONF_PASSWORD],
-        session,
-    )
+    client, store, _ = create_client(hass, dict(entry.data))
+
+    try:
+        saved = await store.async_load()
+        if saved:
+            client.restore_cookies(saved.get("cookies", []))
+        if not client.is_authenticated:
+            raise ConfigEntryAuthFailed("EVC-net authentication required")
+    except EvcNetException as err:
+        raise ConfigEntryNotReady(f"Connection with EVC-net failed: {err}") from err
 
     coordinator = EvcNetCoordinator(hass, client)
 

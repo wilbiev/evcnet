@@ -13,6 +13,8 @@ This custom integration allows you to monitor and control your EVC-net (Last Mil
 - NL: (`50five-snl.evc-net.com`)
 - UK: (`50five-suk.evc-net.com`)
 
+From version 1.1.4 onwards two factor authentication with OTP is supported.
+
 ## Features
 
 - **Buttons**: Control charging station operations (soft/hard reset, unlock connector, block/unblock)
