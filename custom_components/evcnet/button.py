@@ -104,7 +104,9 @@ class EvcNetButton(EvcNetEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         if self.entity_description.command == "poll":
-            await self.coordinator.async_request_refresh()
+            await self.coordinator.async_poll_spot(
+                self._spot_id, force_auxiliary_refresh=True
+            )
             return
 
         spot_data = self.coordinator.data.get(self._spot_id)

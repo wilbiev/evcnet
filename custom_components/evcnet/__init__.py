@@ -3,13 +3,20 @@
 from dataclasses import dataclass
 import logging
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from .const import CONF_BASE_URL, DOMAIN, EvcNetException
+from .const import (
+    CONF_BASE_URL,
+    CONF_SELECTED_CARD_IDS,
+    CONF_SELECTED_CHANNEL_IDS,
+    DOMAIN,
+    EvcNetException,
+)
 from .coordinator import EvcNetCoordinator
 from .session import create_client
 
@@ -62,7 +69,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
     except EvcNetException as err:
         raise ConfigEntryNotReady(f"Connection with EVC-net failed: {err}") from err
 
-    coordinator = EvcNetCoordinator(hass, client)
+    selected_card_ids = entry.options.get(CONF_SELECTED_CARD_IDS, {})
+    selected_channel_ids = entry.options.get(CONF_SELECTED_CHANNEL_IDS, {})
+    coordinator = EvcNetCoordinator(
+        hass,
+        client,
+        selected_card_ids=(
+            selected_card_ids if isinstance(selected_card_ids, dict) else {}
+        ),
+        selected_channel_ids=(
+            selected_channel_ids if isinstance(selected_channel_ids, dict) else {}
+        ),
+    )
 
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -116,10 +134,29 @@ def setup_services(hass: HomeAssistant) -> None:
                 channel_id = channel_id_override or spot_data.selected_channel_id
 
                 if card_id and channel_id and customer_id:
-                    await coordinator.client.start_charging(
-                        spot_id, customer_id, card_id, channel_id
-                    )
+                    try:
+                        await coordinator.client.start_charging(
+                            spot_id, customer_id, card_id, channel_id
+                        )
+                    except Exception:
+                        _LOGGER.exception(
+                            "Failed to start charging for spot %s", spot_id
+                        )
+                        persistent_notification.async_create(
+                            hass,
+                            "The charging start command failed. Check the integration logs.",
+                            title="EVC-net charging",
+                            notification_id=f"evcnet_{spot_id}_service_start_failed",
+                        )
+                        continue
                     await coordinator.async_request_refresh()
+                else:
+                    persistent_notification.async_create(
+                        hass,
+                        "Select a valid card and channel before starting charging.",
+                        title="EVC-net charging",
+                        notification_id=f"evcnet_{spot_id}_service_start_failed",
+                    )
 
     hass.services.async_register(DOMAIN, "start_charging", handle_start_charging)
 

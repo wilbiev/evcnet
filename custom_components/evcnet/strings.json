@@ -19,6 +19,13 @@
           "password": "Password"
         }
       },
+      "reauth_confirm": {
+        "title": "Reauthenticate with EVC-net",
+        "description": "Enter the password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      },
       "otp": {
         "title": "Verify your EVC-net email code",
         "description": "Enter the 6-digit code sent to your email address for {username}.",
@@ -37,6 +44,7 @@
     "abort": {
       "already_configured": "This account is already configured",
       "challenge_expired": "The verification challenge expired. Please start the setup again.",
+      "reauth_entry_not_found": "The EVC-net account could not be found.",
       "reconfigure_successful": "Reconfiguration successful"
     }
   },

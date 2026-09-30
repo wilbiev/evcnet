@@ -354,7 +354,7 @@ class EvcNetApiClient:
 
         if not self._is_authenticated:
             if not await self.authenticate():
-                raise EvcNetException("Failed to authenticate")
+                raise AuthenticationError("Failed to authenticate")
 
         url = f"{self.base_url}{AJAX_ENDPOINT}"
 
@@ -412,7 +412,7 @@ class EvcNetApiClient:
                                 # Retry the request once
                                 return await self._make_ajax_request(requests_payload)
 
-                            raise EvcNetException(
+                            raise AuthenticationError(
                                 "Re-authentication failed or still getting HTML response"
                             )
                         except json.JSONDecodeError as err:
@@ -434,7 +434,7 @@ class EvcNetApiClient:
                     if await self.authenticate():
                         # Retry the request
                         return await self._make_ajax_request(requests_payload)
-                    raise EvcNetException("Re-authentication failed")
+                    raise AuthenticationError("Re-authentication failed")
                 else:
                     response_text = await response.text()
                     _LOGGER.error(

@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import EvcNetConfigEntry
+from .const import CONF_SELECTED_CARD_IDS, CONF_SELECTED_CHANNEL_IDS
 from .coordinator import EvcNetCoordinator, EvcSpotData
 from .entity import EvcNetEntity
 
@@ -52,6 +53,7 @@ async def async_setup_entry(
             coordinator,
             description,
             spot_id,
+            entry,
         )
         for spot_id in coordinator.data
         for description in SELECT_TYPES
@@ -68,10 +70,12 @@ class EvcNetSelect(EvcNetEntity, SelectEntity):
         coordinator: EvcNetCoordinator,
         description: EvcNetSelectEntityDescription,
         spot_id: str,
+        entry: EvcNetConfigEntry,
     ) -> None:
         """Initialize the select entity."""
         super().__init__(coordinator, spot_id)
         self.entity_description = description
+        self._entry = entry
         self._attr_unique_id = f"{spot_id}_{description.key}_select"
 
     @property
@@ -111,9 +115,24 @@ class EvcNetSelect(EvcNetEntity, SelectEntity):
         if self.entity_description.key == "active_card":
             if selected_id := spot_data.available_cards.get(option):
                 spot_data.selected_card_id = selected_id
+                self._persist_selection(CONF_SELECTED_CARD_IDS, selected_id)
 
         elif self.entity_description.key == "active_channel":
             spot_data.selected_channel_id = option
-            await self.coordinator.async_poll_spot(self._spot_id)
+            self._persist_selection(CONF_SELECTED_CHANNEL_IDS, option)
+            await self.coordinator.async_poll_spot(
+                self._spot_id, force_auxiliary_refresh=True
+            )
 
         self.async_write_ha_state()
+
+    def _persist_selection(self, option_key: str, value: str) -> None:
+        """Save a selection for this spot in the config entry options."""
+        selected = self._entry.options.get(option_key, {})
+        if not isinstance(selected, dict):
+            selected = {}
+        updated_options = dict(self._entry.options)
+        updated_options[option_key] = {**selected, self._spot_id: value}
+        self.coordinator.hass.config_entries.async_update_entry(
+            self._entry, options=updated_options
+        )

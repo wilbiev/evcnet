@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.evcnet.api import EvcNetApiClient, InvalidOtp, TwoFactorRequired
+from custom_components.evcnet.api import (
+    AuthenticationError,
+    EvcNetApiClient,
+    InvalidOtp,
+    TwoFactorRequired,
+)
 from custom_components.evcnet.config_flow import EvcNetConfigFlow
 
 
@@ -254,3 +259,109 @@ def test_export_and_restore_session_cookies() -> None:
     )
     restored.restore_cookies(exported)
     assert restored.is_authenticated is True
+
+
+@pytest.mark.asyncio
+async def test_expired_session_login_failure_is_authentication_error() -> None:
+    """A failed login after session expiry should initiate reauthentication."""
+    session = MagicMock()
+    session.post = MagicMock(return_value=DummyResponse(status=401))
+    client = EvcNetApiClient(
+        "https://example.com", "user@example.com", "secret", session
+    )
+    setattr(client, "_is_authenticated", True)
+    client.authenticate = AsyncMock(return_value=False)
+
+    with pytest.raises(AuthenticationError):
+        await client.get_charge_spots()
+
+
+@pytest.mark.asyncio
+async def test_reauth_confirm_transitions_to_otp_when_required() -> None:
+    """Reauthentication should reuse the OTP step when the portal requests it."""
+    flow = EvcNetConfigFlow()
+    flow.hass = MagicMock()
+    entry = MagicMock()
+    entry.data = {
+        "base_url": "https://example.com",
+        "username": "user@example.com",
+        "password": "old-secret",
+    }
+    setattr(flow, "_reauth_entry", entry)
+
+    client = MagicMock()
+    client.authenticate = AsyncMock(
+        side_effect=TwoFactorRequired("Email verification required")
+    )
+    save = AsyncMock()
+
+    with patch(
+        "custom_components.evcnet.config_flow.create_client",
+        return_value=(client, MagicMock(), save),
+    ):
+        result = await flow.async_step_reauth_confirm({"password": "new-secret"})
+
+    assert result.get("type") == "form"
+    assert result.get("step_id") == "otp"
+    assert object.__getattribute__(flow, "_pending_user_input")["password"] == (
+        "new-secret"
+    )
+
+
+@pytest.mark.asyncio
+async def test_otp_success_updates_reauth_entry() -> None:
+    """A successful OTP challenge should update and reload the existing entry."""
+    flow = EvcNetConfigFlow()
+    flow.hass = MagicMock()
+    entry = MagicMock()
+    client = MagicMock()
+    client.verify_otp = AsyncMock(return_value=True)
+    client.export_cookies.return_value = [{"name": "PHPSESSID", "value": "session-123"}]
+    setattr(flow, "_reauth_entry", entry)
+    setattr(flow, "_client", client)
+    setattr(
+        flow,
+        "_pending_user_input",
+        {
+            "base_url": "https://example.com",
+            "username": "user@example.com",
+            "password": "new-secret",
+        },
+    )
+    save = AsyncMock()
+    setattr(flow, "_save", save)
+    update_result = {"type": "abort", "reason": "reauth_successful"}
+    flow.async_update_reload_and_abort = MagicMock(return_value=update_result)
+
+    result = await flow.async_step_otp({"otp": "123456"})
+
+    assert result == update_result
+    save.assert_awaited_once_with(client.export_cookies.return_value)
+    flow.async_update_reload_and_abort.assert_called_once_with(
+        entry,
+        data_updates=object.__getattribute__(flow, "_pending_user_input"),
+        reason="reauth_successful",
+    )
+
+
+@pytest.mark.asyncio
+async def test_initial_flow_rejects_false_authentication_result() -> None:
+    """Do not create a config entry when authentication returns false."""
+    flow = EvcNetConfigFlow()
+    flow.hass = MagicMock()
+    client = MagicMock()
+    client.authenticate = AsyncMock(return_value=False)
+    user_input = {
+        "base_url": "https://example.com",
+        "username": "user@example.com",
+        "password": "secret",
+    }
+
+    with patch(
+        "custom_components.evcnet.config_flow.create_client",
+        return_value=(client, MagicMock(), AsyncMock()),
+    ):
+        result = await flow.async_step_user(user_input)
+
+    assert result.get("type") == "form"
+    assert result.get("errors") == {"base": "invalid_auth"}
