@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -79,16 +80,22 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
                 "Unable to start charging: No card selected for spot %s",
                 self._spot_id,
             )
+            self._notify_action_failure(
+                "start", "Select a valid card and channel before starting charging."
+            )
             return
 
         try:
             await self.coordinator.client.start_charging(
                 self._spot_id, customer_id, card_id, channel_id
             )
-            await asyncio.sleep(3)
-            await self.coordinator.async_poll_spot(self._spot_id)
+            await self._async_wait_for_state(expected_on=True)
         except Exception as err:
             _LOGGER.error("Error when starting charging: %s", err)
+            self._notify_action_failure(
+                "start",
+                "The charging start command failed. Check the integration logs.",
+            )
             raise
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -104,11 +111,36 @@ class EvcNetChargingSwitch(EvcNetEntity, SwitchEntity):
                 await self.coordinator.client.soft_reset(self._spot_id, channel_id)
             else:
                 await self.coordinator.client.stop_charging(self._spot_id, channel_id)
-            await asyncio.sleep(3)
-            await self.coordinator.async_poll_spot(self._spot_id)
+            await self._async_wait_for_state(expected_on=False)
         except Exception as err:
             _LOGGER.error("Error when stopping charging: %s", err)
+            self._notify_action_failure(
+                "stop", "The charging stop command failed. Check the integration logs."
+            )
             raise
+
+    async def _async_wait_for_state(self, *, expected_on: bool) -> None:
+        """Poll briefly for the charger to reflect a requested state change."""
+        for _ in range(3):
+            await asyncio.sleep(3)
+            await self.coordinator.async_poll_spot(self._spot_id)
+            if self.is_on is expected_on:
+                return
+
+        _LOGGER.warning(
+            "Charging state for spot %s did not change to %s after the command",
+            self._spot_id,
+            expected_on,
+        )
+
+    def _notify_action_failure(self, action: str, message: str) -> None:
+        """Show an actionable notification when a charging command fails."""
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title="EVC-net charging",
+            notification_id=f"evcnet_{self._spot_id}_{action}_failed",
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

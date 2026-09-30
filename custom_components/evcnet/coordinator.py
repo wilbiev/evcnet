@@ -1,14 +1,16 @@
 """DataUpdateCoordinator for EVC-net."""
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .api import EvcNetApiClient
+from .api import AuthenticationError, EvcNetApiClient
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -24,6 +26,10 @@ from .const import (
 from .utils import get_total_energy_usage_kwh
 
 _LOGGER = logging.getLogger(__name__)
+
+CARD_DATA_UPDATE_INTERVAL = timedelta(minutes=10)
+TOTAL_ENERGY_UPDATE_INTERVAL = timedelta(hours=1)
+LOG_UPDATE_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass
@@ -44,7 +50,13 @@ class EvcSpotData:
 class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
     """Class to manage fetching EVC-net data."""
 
-    def __init__(self, hass: HomeAssistant, client: EvcNetApiClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: EvcNetApiClient,
+        selected_card_ids: dict[str, str] | None = None,
+        selected_channel_ids: dict[str, str] | None = None,
+    ) -> None:
         """Initialize coordinator."""
         super().__init__(
             hass,
@@ -54,6 +66,13 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         )
         self.client = client
         self.charge_spots: list[dict[str, Any]] = []
+        self._selected_card_ids = dict(selected_card_ids or {})
+        self._selected_channel_ids = dict(selected_channel_ids or {})
+        self._card_cache: dict[str, tuple[datetime, str | None, dict[str, str]]] = {}
+        self._energy_cache: dict[str, tuple[datetime, float]] = {}
+        self._logging_cache: dict[
+            tuple[str, str], tuple[datetime, list[dict[str, Any]]]
+        ] = {}
 
     def get_device_info(self, spot_id: str) -> dict[str, Any]:
         """Generate generic device info for a charge spot."""
@@ -87,6 +106,10 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                     )
                     data[spot_id] = spot_data
 
+        except AuthenticationError as err:
+            raise ConfigEntryAuthFailed(
+                "EVC-net authentication expired; reauthentication is required"
+            ) from err
         except EvcNetException as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
         else:
@@ -121,7 +144,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
     def _get_old_card_selections(self) -> dict[str, Any]:
         """Get previous card selections to avoid overwriting them."""
-        old_selections = {}
+        old_selections = dict(self._selected_card_ids)
         if self.data:
             for sid, sdata in self.data.items():
                 if sdata.selected_card_id:
@@ -130,7 +153,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
     def _get_old_channel_selections(self) -> dict[str, Any]:
         """Get previous channel selections to avoid overwriting them."""
-        old_selections = {}
+        old_selections = dict(self._selected_channel_ids)
         if self.data:
             for sid, sdata in self.data.items():
                 if sdata.selected_channel_id:
@@ -143,71 +166,103 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         spot_id: str,
         old_card_selections: dict[str, Any],
         old_channel_selections: dict[str, Any],
+        force_auxiliary_refresh: bool = False,
     ) -> EvcSpotData:
         """Process a single charging spot."""
         try:
-            status = {}
+            status: dict[str, Any] = {}
             customer_idx = None
-            available_cards = {}
+            available_cards: dict[str, str] = {}
             selected_card_id = None
-            available_channels = {}
+            available_channels: dict[int, str] = {}
             selected_channel_id = "1"
-            logging_data = []
+            logging_data: list[dict[str, Any]] = []
             status_response = cast(
                 list[list[dict[str, Any]]],
                 await self.client.get_spot_overview(str(spot_id)),
             )
-            if isinstance(status_response, list) and len(status_response) > 0:
-                available_channels = {}
+            if isinstance(status_response, list) and status_response:
                 for index, channel_info in enumerate(status_response[0]):
                     channel_name = str(channel_info.get("CHANNEL", index + 1))
                     available_channels[index] = channel_name
                 if not available_channels:
                     available_channels = {0: "1"}
+
                 selected_channel_id = old_channel_selections.get(spot_id)
                 if selected_channel_id not in available_channels.values():
-                    selected_channel_id = list(available_channels.values())[0]
+                    selected_channel_id = next(iter(available_channels.values()))
                     _LOGGER.info(
                         "Selected channel for spot %s was not valid or new. Default selected",
                         spot_id,
                     )
+
                 target_index = next(
                     (
-                        idx
-                        for idx, name in available_channels.items()
-                        if name == selected_channel_id
+                        index
+                        for index, channel in available_channels.items()
+                        if channel == selected_channel_id
                     ),
                     0,
                 )
-                try:
-                    status = status_response[0][target_index]
-                except IndexError:
-                    status = status_response[0][0] if status_response[0] else {}
+                status = status_response[0][target_index] if status_response[0] else {}
                 if status:
-                    (
-                        customer_idx,
-                        available_cards,
-                        selected_card_id,
-                    ) = await self._async_process_customer_and_cards(
-                        spot_id, status, old_card_selections
-                    )
+                    now = dt_util.utcnow()
+                    card_cache = self._card_cache.get(spot_id)
+                    if (
+                        force_auxiliary_refresh
+                        or card_cache is None
+                        or now - card_cache[0] >= CARD_DATA_UPDATE_INTERVAL
+                    ):
+                        (
+                            customer_idx,
+                            available_cards,
+                            selected_card_id,
+                        ) = await self._async_process_customer_and_cards(
+                            spot_id, status, old_card_selections
+                        )
+                        self._card_cache[spot_id] = (
+                            now,
+                            customer_idx,
+                            available_cards,
+                        )
+                    else:
+                        _, customer_idx, available_cards = card_cache
+                        selected_card_id = self._apply_card_selection(
+                            spot_id,
+                            status,
+                            customer_idx,
+                            available_cards,
+                            old_card_selections,
+                        )
                     _LOGGER.debug("Status for spot %s: %s", spot_id, status)
-            total_energy_usage = await self._async_get_total_energy_usage(spot_id)
-            _LOGGER.debug(
-                "Total energy usage for spot %s: %s",
-                spot_id,
-                total_energy_usage,
-            )
+
+            now = dt_util.utcnow()
+            energy_cache = self._energy_cache.get(spot_id)
+            if (
+                force_auxiliary_refresh
+                or energy_cache is None
+                or now - energy_cache[0] >= TOTAL_ENERGY_UPDATE_INTERVAL
+            ):
+                total_energy_usage = await self._async_get_total_energy_usage(spot_id)
+                self._energy_cache[spot_id] = (now, total_energy_usage)
+            else:
+                _, total_energy_usage = energy_cache
+
             if selected_channel_id:
-                logging_data = await self._async_get_logging(
-                    spot_id, selected_channel_id
-                )
-                _LOGGER.debug(
-                    "Logging data for spot %s channel %s: %s",
-                    spot_id,
-                    selected_channel_id,
-                    logging_data,
-                )
+                logging_key = (spot_id, selected_channel_id)
+                logging_cache = self._logging_cache.get(logging_key)
+                now = dt_util.utcnow()
+                if (
+                    force_auxiliary_refresh
+                    or logging_cache is None
+                    or now - logging_cache[0] >= LOG_UPDATE_INTERVAL
+                ):
+                    logging_data = await self._async_get_logging(
+                        spot_id, selected_channel_id
+                    )
+                    self._logging_cache[logging_key] = (now, logging_data)
+                else:
+                    _, logging_data = logging_cache
 
             return EvcSpotData(
                 info=spot,
@@ -300,6 +355,40 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
         return customer_idx, available_cards, selected_card_id
 
+    @staticmethod
+    def _apply_card_selection(
+        spot_id: str,
+        status: dict[str, Any],
+        customer_idx: str | None,
+        available_cards: dict[str, str],
+        old_selections: dict[str, Any],
+    ) -> str | None:
+        """Apply the current card selection to a cached card list."""
+        if customer_idx:
+            status[KEY_CUSTOMERS_IDX] = customer_idx
+
+        selected_card_id = old_selections.get(spot_id)
+        if not available_cards:
+            status[KEY_CARDS_IDX] = ""
+            status[KEY_CARDID] = ""
+            return None
+
+        if available_cards and selected_card_id not in available_cards.values():
+            if selected_card_id:
+                _LOGGER.info(
+                    "Selected card for spot %s was not valid or new. Default selected",
+                    spot_id,
+                )
+            selected_card_id = next(iter(available_cards.values()))
+
+        for name, card_id in available_cards.items():
+            if card_id == selected_card_id:
+                status[KEY_CARDS_IDX] = selected_card_id
+                status[KEY_CARDID] = name
+                break
+
+        return selected_card_id
+
     async def _async_get_total_energy_usage(self, spot_id: str) -> float:
         """Get total energy usage for a spot."""
         total_energy_list = cast(
@@ -366,7 +455,9 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
             return []
 
-    async def async_poll_spot(self, spot_id: str) -> None:
+    async def async_poll_spot(
+        self, spot_id: str, *, force_auxiliary_refresh: bool = False
+    ) -> None:
         """Update only the data for a specific charging spot."""
         if spot_id not in self.data:
             _LOGGER.error("Spot %s not found in current data", spot_id)
@@ -381,12 +472,18 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         if not raw_spot:
             return
 
-        new_spot_data = await self._async_process_spot(
-            spot=raw_spot,
-            spot_id=spot_id,
-            old_card_selections={spot_id: current_spot_data.selected_card_id},
-            old_channel_selections={spot_id: current_spot_data.selected_channel_id},
-        )
+        try:
+            new_spot_data = await self._async_process_spot(
+                spot=raw_spot,
+                spot_id=spot_id,
+                old_card_selections={spot_id: current_spot_data.selected_card_id},
+                old_channel_selections={spot_id: current_spot_data.selected_channel_id},
+                force_auxiliary_refresh=force_auxiliary_refresh,
+            )
+        except AuthenticationError as err:
+            raise ConfigEntryAuthFailed(
+                "EVC-net authentication expired; reauthentication is required"
+            ) from err
 
         new_data = {**self.data}
         new_data[spot_id] = new_spot_data
