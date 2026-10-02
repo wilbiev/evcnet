@@ -101,6 +101,49 @@ async def test_authenticate_detects_otp_in_html_response() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://capbornes.evc-net.com", "https://50five-sde.evc-net.com"],
+)
+async def test_browser_emulation_uses_portal_login_button_value(
+    base_url: str,
+) -> None:
+    """The fallback must submit the value expected by the portal's login form."""
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    session.get = MagicMock(return_value=DummyResponse(status=200))
+    session.post = MagicMock(
+        return_value=DummyResponse(status=302, headers={"Location": "/Overview"})
+    )
+    session.cookie_jar.filter_cookies.return_value = {
+        "PHPSESSID": MagicMock(value="sess-123"),
+        "SERVERID": MagicMock(value="server-456"),
+    }
+    api_session = MagicMock()
+    api_session.get = MagicMock(return_value=DummyResponse(status=200))
+
+    client = EvcNetApiClient(
+        base_url,
+        "user@example.com",
+        "secret",
+        api_session,
+    )
+    setattr(client, "_standard_login", AsyncMock(return_value=False))
+
+    with patch(
+        "custom_components.evcnet.api.aiohttp.ClientSession", return_value=session
+    ):
+        assert await client.authenticate() is True
+
+    form_fields = session.post.call_args.kwargs["data"]._fields
+    login_field = next(
+        field for field in form_fields if field[0].get("name") == "Login"
+    )
+    assert login_field[2] == "Log in"
+
+
+@pytest.mark.asyncio
 async def test_authenticate_detects_otp_after_dashboard_redirect() -> None:
     """A dashboard redirect can still be the moment the server asks for OTP."""
     session = MagicMock()
