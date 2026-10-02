@@ -105,14 +105,20 @@ async def test_authenticate_detects_otp_in_html_response() -> None:
     "base_url",
     ["https://capbornes.evc-net.com", "https://50five-sde.evc-net.com"],
 )
+@pytest.mark.parametrize("login_value", ["Log in", "Se connecter"])
 async def test_browser_emulation_uses_portal_login_button_value(
-    base_url: str,
+    base_url: str, login_value: str
 ) -> None:
-    """The fallback must submit the value expected by the portal's login form."""
+    """The fallback must submit the localized value expected by the portal."""
     session = MagicMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=False)
-    session.get = MagicMock(return_value=DummyResponse(status=200))
+    session.get = MagicMock(
+        return_value=DummyResponse(
+            status=200,
+            body=(f'<input type="submit" name="Login" value="{login_value}">'),
+        )
+    )
     session.post = MagicMock(
         return_value=DummyResponse(status=302, headers={"Location": "/Overview"})
     )
@@ -140,7 +146,7 @@ async def test_browser_emulation_uses_portal_login_button_value(
     login_field = next(
         field for field in form_fields if field[0].get("name") == "Login"
     )
-    assert login_field[2] == "Log in"
+    assert login_field[2] == login_value
 
 
 @pytest.mark.asyncio

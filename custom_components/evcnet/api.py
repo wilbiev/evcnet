@@ -49,6 +49,19 @@ class _TokenParser(HTMLParser):
             self.token = fields.get("value")
 
 
+class _LoginButtonParser(HTMLParser):
+    """Extract the login submit value from the portal's localized form."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.value: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        fields = dict(attrs)
+        if tag == "input" and fields.get("name") == "Login":
+            self.value = fields.get("value")
+
+
 class EvcNetApiClient:
     """API client for EVC-net."""
 
@@ -256,12 +269,15 @@ class EvcNetApiClient:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url_login) as resp:
-                    await resp.text()
+                    login_page = await resp.text()
+
+                parser = _LoginButtonParser()
+                parser.feed(login_page)
 
                 data = aiohttp.FormData()
                 data.add_field("emailField", self.username)
                 data.add_field("passwordField", self.password)
-                data.add_field("Login", "Log in")
+                data.add_field("Login", parser.value or "Log in")
 
                 headers = {
                     "Origin": self.base_url,
