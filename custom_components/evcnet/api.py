@@ -50,7 +50,7 @@ class _TokenParser(HTMLParser):
 
 
 class _LoginButtonParser(HTMLParser):
-    """Extract the login submit value from the portal's localized form."""
+    """Extract the localized login submit value from the portal form."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -302,6 +302,7 @@ class EvcNetApiClient:
                             self._serverid = sid.value
                             self._phpsessid = php.value
                             await self._check_dashboard_for_otp()
+                            self._is_authenticated = True
                             _LOGGER.info(
                                 "Successfully completed browser-emulation login"
                             )

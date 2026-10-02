@@ -141,6 +141,7 @@ async def test_browser_emulation_uses_portal_login_button_value(
         "custom_components.evcnet.api.aiohttp.ClientSession", return_value=session
     ):
         assert await client.authenticate() is True
+    assert client.is_authenticated is True
 
     form_fields = session.post.call_args.kwargs["data"]._fields
     login_field = next(
