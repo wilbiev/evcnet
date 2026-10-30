@@ -311,11 +311,24 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 list[list[dict[str, Any]]],
                 await self.client.get_customer_id(spot_id),
             )
-            if isinstance(customer_data, list) and len(customer_data) > 0:
+            _LOGGER.error("spot=%s customer_data=%s", spot_id, customer_data)
+            if (
+                isinstance(customer_data, list)
+                and len(customer_data) > 0
+                and isinstance(customer_data[0], list)
+                and len(customer_data[0]) > 0
+            ):
                 customer_idx = customer_data[0][0].get(KEY_ID)
                 customer_text = customer_data[0][0].get(KEY_TEXT)
+
                 status[KEY_CUSTOMERS_IDX] = customer_idx
                 status[KEY_CUSTOMER_NAME] = customer_text
+            else:
+                _LOGGER.warning(
+                    "No customer data returned for spot %s: %s",
+                    spot_id,
+                    customer_data,
+                )
 
         if customer_idx:
             card_data = cast(
