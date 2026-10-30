@@ -311,7 +311,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 list[list[dict[str, Any]]],
                 await self.client.get_customer_id(spot_id),
             )
-            _LOGGER.error("spot=%s customer_data=%s", spot_id, customer_data)
+
             if (
                 isinstance(customer_data, list)
                 and len(customer_data) > 0
