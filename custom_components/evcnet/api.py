@@ -55,11 +55,24 @@ class _LoginButtonParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.value: str | None = None
+        self._submit_button: bool = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         fields = dict(attrs)
         if tag == "input" and fields.get("name") == "Login":
-            self.value = fields.get("value")
+            self.value = fields.get("value") or None
+        elif tag == "button" and fields.get("name") == "Login":
+            self.value = fields.get("value") or None
+            self._submit_button = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "button":
+            self._submit_button = False
+
+    def handle_data(self, data: str) -> None:
+        button_text = data.strip()
+        if self._submit_button and self.value is None and button_text:
+            self.value = button_text
 
 
 class EvcNetApiClient:
@@ -186,11 +199,11 @@ class EvcNetApiClient:
         """Authenticate with EVC-net, including the email 2FA challenge if required."""
         _LOGGER.debug("Start authentication process")
 
-        if await self._standard_login():
+        if await self._browser_emulation_login():
             return True
-        _LOGGER.info("Standard login failed, switching to browser emulation fallback")
+        _LOGGER.info("Browser login failed, switching to standard login fallback")
 
-        return await self._browser_emulation_login()
+        return await self._standard_login()
 
     async def _fetch_otp_token(self) -> None:
         """Fetch the 2FA challenge page and extract its CSRF token."""
@@ -314,57 +327,56 @@ class EvcNetApiClient:
             return False
 
     async def _browser_emulation_login(self) -> bool:
-        """Browser-emulation login, uses multipart/form-data and session-cookies."""
+        """Log in like the portal's browser form using the account session."""
         url_login = f"{self.base_url}{LOGIN_ENDPOINT}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url_login) as resp:
-                    login_page = await resp.text()
+            async with self.session.get(url_login) as response:
+                login_page = await response.text()
 
-                parser = _LoginButtonParser()
-                parser.feed(login_page)
+            parser = _LoginButtonParser()
+            parser.feed(login_page)
 
-                data = aiohttp.FormData()
-                data.add_field("emailField", self.username)
-                data.add_field("passwordField", self.password)
-                data.add_field("Login", parser.value or "Log in")
+            data = aiohttp.FormData()
+            data.add_field("emailField", self.username)
+            data.add_field("passwordField", self.password)
+            data.add_field("Login", parser.value or "Log in")
 
-                headers = {
-                    "Origin": self.base_url,
-                    "Referer": url_login,
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
-                }
+            headers = {
+                "Origin": self.base_url,
+                "Referer": url_login,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+            }
 
-                async with session.post(
-                    url_login, data=data, headers=headers, allow_redirects=False
-                ) as resp:
-                    location = str(resp.headers.get("Location", "")).lower()
-                    response_text = await resp.text()
-                    if self._has_2fa_challenge(location, response_text):
-                        await self._fetch_otp_token()
-                        raise TwoFactorRequired("Email verification required")
+            async with self.session.post(
+                url_login, data=data, headers=headers, allow_redirects=False
+            ) as response:
+                location = str(response.headers.get("Location", "")).lower()
+                response_text = await response.text()
+                if self._has_2fa_challenge(location, response_text):
+                    await self._fetch_otp_token()
+                    raise TwoFactorRequired("Email verification required")
 
-                    if resp.status in [302, 307]:
-                        cookies = session.cookie_jar.filter_cookies(URL(url_login))
-                        sid = cookies.get("SERVERID")
-                        php = cookies.get("PHPSESSID")
-                        if sid and php:
-                            self._serverid = sid.value
-                            self._phpsessid = php.value
-                            await self._check_dashboard_for_otp()
-                            self._is_authenticated = True
-                            _LOGGER.info(
-                                "Successfully completed browser-emulation login"
-                            )
-                            return True
+                if response.status in (302, 307):
+                    self._store_session_cookies()
+                    if self._phpsessid:
+                        await self._check_dashboard_for_otp()
+                        self._is_authenticated = True
+                        _LOGGER.info("Successfully authenticated with browser login")
+                        return True
+
+                    _LOGGER.error("Browser login redirect did not set a PHPSESSID")
+                    _LOGGER.debug("All response headers: %s", dict(response.headers))
 
         except EvcNetException as err:
-            _LOGGER.error("Critical error during browser-emulation login: %s", err)
+            _LOGGER.error("Browser login failed: %s", err)
             return False
-        else:
-            _LOGGER.error("Browser-emulation login failed: no valid cookies received")
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error during browser login: %s", err)
             return False
+
+        _LOGGER.error("Browser login failed: no valid session received")
+        return False
 
     async def verify_otp(self, code: str) -> bool:
         """Submit a six-digit email OTP challenge code."""
