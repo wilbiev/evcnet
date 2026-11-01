@@ -169,6 +169,19 @@ class EvcNetApiClient:
         )
         return any(marker in content for marker in markers)
 
+    @staticmethod
+    def _is_otp_form(location: str, response_text: str) -> bool:
+        """Return True when the portal exposes the email-code form."""
+        content = f"{location} {response_text}".lower()
+        markers = (
+            "/2fa",
+            "verifyotp",
+            "_auth_code",
+            "verification code",
+            "email verification",
+        )
+        return any(marker in content for marker in markers)
+
     async def authenticate(self) -> bool:
         """Authenticate with EVC-net, including the email 2FA challenge if required."""
         _LOGGER.debug("Start authentication process")
@@ -201,7 +214,14 @@ class EvcNetApiClient:
         """Some EVC-net deployments redirect to /Overview before enforcing OTP."""
         url = f"{self.base_url}/Overview"
         try:
-            async with self.session.get(url, allow_redirects=False) as response:
+            async with self.session.get(
+                url,
+                allow_redirects=False,
+                cookies={
+                    "PHPSESSID": self._phpsessid,
+                    "SERVERID": self._serverid or "",
+                },
+            ) as response:
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
                 if self._has_2fa_challenge(location, response_text):
@@ -209,6 +229,37 @@ class EvcNetApiClient:
                     raise TwoFactorRequired("Email verification required")
         except aiohttp.ClientError as err:
             _LOGGER.warning("Could not validate dashboard challenge state: %s", err)
+            return
+
+        await self._check_otp_endpoint()
+
+    async def _check_otp_endpoint(self) -> None:
+        """Check the OTP route when a portal hides the challenge on its dashboard."""
+        try:
+            async with self.session.get(
+                f"{self.base_url}/2fa",
+                allow_redirects=False,
+                cookies={
+                    "PHPSESSID": self._phpsessid,
+                    "SERVERID": self._serverid or "",
+                },
+            ) as response:
+                location = str(response.headers.get("Location", "")).lower()
+                response_text = await response.text()
+        except aiohttp.ClientError as err:
+            _LOGGER.warning("Could not validate OTP challenge state: %s", err)
+            return
+
+        if not self._is_otp_form(location, response_text):
+            return
+
+        parser = _TokenParser()
+        parser.feed(response_text)
+        if parser.token:
+            self._token = parser.token
+        else:
+            await self._fetch_otp_token()
+        raise TwoFactorRequired("Email verification required")
 
     async def _standard_login(self) -> bool:
         """Standard authentication with the EVC-net API."""
