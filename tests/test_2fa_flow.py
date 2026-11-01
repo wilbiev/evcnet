@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -146,7 +147,9 @@ async def test_browser_emulation_uses_portal_login_button_value(
     assert await client.authenticate() is True
     assert client.is_authenticated is True
 
-    form_fields = session.post.call_args.kwargs["data"]._fields
+    form = session.post.call_args.kwargs["data"]
+    assert form.is_multipart is True
+    form_fields = form._fields
     login_field = next(
         field for field in form_fields if field[0].get("name") == "Login"
     )
@@ -288,6 +291,45 @@ async def test_verify_otp_accepts_valid_code() -> None:
     assert object.__getattribute__(client, "_is_authenticated") is True
     assert object.__getattribute__(client, "_phpsessid") == "sess-123"
     assert object.__getattribute__(client, "_serverid") == "server-456"
+    form = session.post.call_args.kwargs["data"]
+    assert form.is_multipart is True
+    fields = {field[0]["name"]: field[2] for field in form._fields}
+    assert fields == {
+        "_token": "token-123",
+        "_auth_code": "123456",
+        "VerifyOtp": "Verify",
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_charge_spots_response_logs_safe_auth_diagnostics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An empty dashboard response should include diagnostics without secrets."""
+    session = MagicMock()
+    session.post = MagicMock(
+        return_value=DummyResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body="[]",
+        )
+    )
+    client = EvcNetApiClient(
+        "https://example.com", "user@example.com", "secret", session
+    )
+    setattr(client, "_is_authenticated", True)
+    setattr(client, "_phpsessid", "private-session-id")
+    setattr(client, "_serverid", "private-server-id")
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.evcnet.api"):
+        assert await client.get_charge_spots() == []
+
+    assert "returned no charge spots" in caplog.text
+    assert "networkOverview" in caplog.text
+    assert "PHPSESSID_present=True" in caplog.text
+    assert "SERVERID_present=True" in caplog.text
+    assert "private-session-id" not in caplog.text
+    assert "private-server-id" not in caplog.text
 
 
 @pytest.mark.asyncio

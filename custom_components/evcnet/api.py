@@ -183,6 +183,11 @@ class EvcNetApiClient:
         return any(marker in content for marker in markers)
 
     @staticmethod
+    def _location_path(location: str) -> str:
+        """Return a redirect path without any potentially sensitive query string."""
+        return URL(location).path if location else ""
+
+    @staticmethod
     def _is_otp_form(location: str, response_text: str) -> bool:
         """Return True when the portal exposes the email-code form."""
         content = f"{location} {response_text}".lower()
@@ -211,6 +216,12 @@ class EvcNetApiClient:
         try:
             async with self.session.get(url, allow_redirects=True) as response:
                 body = await response.text()
+                _LOGGER.debug(
+                    "Fetched OTP form: status=%s, content_type=%s, body_length=%s",
+                    response.status,
+                    response.headers.get("Content-Type", ""),
+                    len(body),
+                )
         except aiohttp.ClientError as err:
             _LOGGER.error("Error while requesting the 2FA form: %s", err)
             raise AuthenticationError("Could not fetch the 2FA challenge") from err
@@ -218,10 +229,12 @@ class EvcNetApiClient:
         parser = _TokenParser()
         parser.feed(body)
         if not parser.token:
+            _LOGGER.warning("OTP form did not contain a hidden CSRF token")
             raise AuthenticationError(
                 "The EVC-net 2FA form did not include a CSRF token"
             )
         self._token = parser.token
+        _LOGGER.debug("OTP form contained a hidden CSRF token")
 
     async def _check_dashboard_for_otp(self) -> None:
         """Some EVC-net deployments redirect to /Overview before enforcing OTP."""
@@ -237,7 +250,19 @@ class EvcNetApiClient:
             ) as response:
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
-                if self._has_2fa_challenge(location, response_text):
+                challenge_detected = self._has_2fa_challenge(
+                    location, response_text
+                )
+                _LOGGER.debug(
+                    "Dashboard auth check: status=%s, location_path=%s, "
+                    "content_type=%s, body_length=%s, otp_marker=%s",
+                    response.status,
+                    self._location_path(location),
+                    response.headers.get("Content-Type", ""),
+                    len(response_text),
+                    challenge_detected,
+                )
+                if challenge_detected:
                     await self._fetch_otp_token()
                     raise TwoFactorRequired("Email verification required")
         except aiohttp.ClientError as err:
@@ -259,17 +284,28 @@ class EvcNetApiClient:
             ) as response:
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
+                otp_form_detected = self._is_otp_form(location, response_text)
+                _LOGGER.debug(
+                    "OTP endpoint check: status=%s, location_path=%s, "
+                    "content_type=%s, body_length=%s, otp_form=%s",
+                    response.status,
+                    self._location_path(location),
+                    response.headers.get("Content-Type", ""),
+                    len(response_text),
+                    otp_form_detected,
+                )
         except aiohttp.ClientError as err:
             _LOGGER.warning("Could not validate OTP challenge state: %s", err)
             return
 
-        if not self._is_otp_form(location, response_text):
+        if not otp_form_detected:
             return
 
         parser = _TokenParser()
         parser.feed(response_text)
         if parser.token:
             self._token = parser.token
+            _LOGGER.debug("OTP endpoint response included a hidden CSRF token")
         else:
             await self._fetch_otp_token()
         raise TwoFactorRequired("Email verification required")
@@ -289,11 +325,22 @@ class EvcNetApiClient:
                 data=data,
                 allow_redirects=False,
             ) as response:
-                _LOGGER.debug("Login response status: %s", response.status)
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
 
-                if self._has_2fa_challenge(location, response_text):
+                challenge_detected = self._has_2fa_challenge(
+                    location, response_text
+                )
+                _LOGGER.debug(
+                    "Standard login response: status=%s, location_path=%s, "
+                    "content_type=%s, body_length=%s, otp_marker=%s",
+                    response.status,
+                    self._location_path(location),
+                    response.headers.get("Content-Type", ""),
+                    len(response_text),
+                    challenge_detected,
+                )
+                if challenge_detected:
                     await self._fetch_otp_token()
                     raise TwoFactorRequired("Email verification required")
 
@@ -304,19 +351,25 @@ class EvcNetApiClient:
                         await self._check_dashboard_for_otp()
                         self._is_authenticated = True
                         _LOGGER.info("Successfully authenticated with EVC-net")
-                        _LOGGER.debug("PHPSESSID: %s", self._phpsessid[:10] + "...")
+                        _LOGGER.debug(
+                            "Session cookie presence after login: PHPSESSID=%s, "
+                            "SERVERID=%s",
+                            bool(self._phpsessid),
+                            bool(self._serverid),
+                        )
                         return True
 
-                    _LOGGER.error("No PHPSESSID found in any location")
-                    _LOGGER.debug("All response headers: %s", dict(response.headers))
+                    _LOGGER.error(
+                        "Login redirect did not set a PHPSESSID "
+                        "(SERVERID_present=%s)",
+                        bool(self._serverid),
+                    )
                     return False
 
                 _LOGGER.error(
                     "Authentication failed with status %s (expected 302)",
                     response.status,
                 )
-                response_text = await response.text()
-                _LOGGER.debug("Response: %s", response_text[:200])
                 return False
 
         except aiohttp.ClientError as err:
@@ -333,14 +386,27 @@ class EvcNetApiClient:
         try:
             async with self.session.get(url_login) as response:
                 login_page = await response.text()
+                _LOGGER.debug(
+                    "Login form response: status=%s, content_type=%s, "
+                    "body_length=%s",
+                    response.status,
+                    response.headers.get("Content-Type", ""),
+                    len(login_page),
+                )
 
             parser = _LoginButtonParser()
             parser.feed(login_page)
+            login_value = parser.value or "Log in"
+            _LOGGER.debug(
+                "Submitting browser-style login form: submit_value=%r, "
+                "encoding=multipart/form-data",
+                login_value,
+            )
 
-            data = aiohttp.FormData()
+            data = aiohttp.FormData(default_to_multipart=True)
             data.add_field("emailField", self.username)
             data.add_field("passwordField", self.password)
-            data.add_field("Login", parser.value or "Log in")
+            data.add_field("Login", login_value)
 
             headers = {
                 "Origin": self.base_url,
@@ -353,20 +419,41 @@ class EvcNetApiClient:
             ) as response:
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
-                if self._has_2fa_challenge(location, response_text):
+                challenge_detected = self._has_2fa_challenge(
+                    location, response_text
+                )
+                _LOGGER.debug(
+                    "Browser login response: status=%s, location_path=%s, "
+                    "content_type=%s, body_length=%s, otp_marker=%s",
+                    response.status,
+                    self._location_path(location),
+                    response.headers.get("Content-Type", ""),
+                    len(response_text),
+                    challenge_detected,
+                )
+                if challenge_detected:
                     await self._fetch_otp_token()
                     raise TwoFactorRequired("Email verification required")
 
                 if response.status in (302, 307):
                     self._store_session_cookies()
+                    _LOGGER.debug(
+                        "Session cookie presence after browser login: "
+                        "PHPSESSID=%s, SERVERID=%s",
+                        bool(self._phpsessid),
+                        bool(self._serverid),
+                    )
                     if self._phpsessid:
                         await self._check_dashboard_for_otp()
                         self._is_authenticated = True
                         _LOGGER.info("Successfully authenticated with browser login")
                         return True
 
-                    _LOGGER.error("Browser login redirect did not set a PHPSESSID")
-                    _LOGGER.debug("All response headers: %s", dict(response.headers))
+                    _LOGGER.error(
+                        "Browser login redirect did not set a PHPSESSID "
+                        "(SERVERID_present=%s)",
+                        bool(self._serverid),
+                    )
 
         except EvcNetException as err:
             _LOGGER.error("Browser login failed: %s", err)
@@ -388,7 +475,7 @@ class EvcNetApiClient:
                 "Restart the login flow to request a verification code"
             )
 
-        form = aiohttp.FormData()
+        form = aiohttp.FormData(default_to_multipart=True)
         form.add_field("_token", self._token)
         form.add_field("_auth_code", code)
         form.add_field("VerifyOtp", "Verify")
@@ -405,6 +492,15 @@ class EvcNetApiClient:
             ) as response:
                 location = str(response.headers.get("Location", "")).lower()
                 response_text = await response.text()
+                _LOGGER.debug(
+                    "OTP verification response: status=%s, location_path=%s, "
+                    "content_type=%s, body_length=%s, otp_marker=%s",
+                    response.status,
+                    self._location_path(location),
+                    response.headers.get("Content-Type", ""),
+                    len(response_text),
+                    self._has_2fa_challenge(location, response_text),
+                )
                 if response.status in (302, 303):
                     if "/overview" in location or location in ("/", ""):
                         self._store_session_cookies()
@@ -476,7 +572,40 @@ class EvcNetApiClient:
                             if response_text.strip().startswith(
                                 "["
                             ) or response_text.strip().startswith("{"):
-                                return json.loads(response_text)
+                                result = json.loads(response_text)
+                                _LOGGER.debug(
+                                    "AJAX response: status=%s, content_type=%s, "
+                                    "json_type=%s, top_level_items=%s",
+                                    response.status,
+                                    content_type,
+                                    type(result).__name__,
+                                    len(result) if isinstance(result, list) else None,
+                                )
+                                if result in ([], [[]]):
+                                    methods = [
+                                        request.get("method", "unknown")
+                                        for request in requests_payload.values()
+                                        if isinstance(request, dict)
+                                    ]
+                                    if "networkOverview" in methods:
+                                        _LOGGER.warning(
+                                            "EVC-net AJAX returned no charge spots "
+                                            "(method=%s, PHPSESSID_present=%s, "
+                                            "SERVERID_present=%s). The account may "
+                                            "have no accessible charge spots, or the "
+                                            "session may not be fully authorized "
+                                            "(for example, OTP may still be pending).",
+                                            methods,
+                                            bool(self._phpsessid),
+                                            bool(self._serverid),
+                                        )
+                                    else:
+                                        _LOGGER.debug(
+                                            "EVC-net AJAX returned an empty result "
+                                            "for method(s) %s",
+                                            methods,
+                                        )
+                                return result
 
                             # It's HTML, session expired
                             _LOGGER.warning(
@@ -495,9 +624,11 @@ class EvcNetApiClient:
                             raise AuthenticationError(
                                 "Re-authentication failed or still getting HTML response"
                             )
-                        except json.JSONDecodeError as err:
-                            _LOGGER.error("Failed to decode JSON response: %s", err)
-                            _LOGGER.debug("Response text: %s", response_text[:500])
+                        except json.JSONDecodeError:
+                            _LOGGER.error(
+                                "Failed to decode JSON response (%s bytes)",
+                                len(response_text),
+                            )
                             raise
                     else:
                         raise EvcNetException(
@@ -518,9 +649,11 @@ class EvcNetApiClient:
                 else:
                     response_text = await response.text()
                     _LOGGER.error(
-                        "Request failed with status %s, response: %s",
+                        "Request failed with status %s (content_type=%s, "
+                        "body_length=%s)",
                         response.status,
-                        response_text[:200],
+                        content_type,
+                        len(response_text),
                     )
                     raise EvcNetException(
                         f"Request failed with status {response.status}"
