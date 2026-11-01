@@ -106,41 +106,44 @@ async def test_authenticate_detects_otp_in_html_response() -> None:
     ["https://capbornes.evc-net.com", "https://50five-sde.evc-net.com"],
 )
 @pytest.mark.parametrize("login_value", ["Log in", "Se connecter"])
+@pytest.mark.parametrize(
+    "submit_markup",
+    [
+        '<input type="submit" name="Login" value="{login_value}">',
+        '<button type="submit" name="Login">{login_value}</button>',
+    ],
+)
 async def test_browser_emulation_uses_portal_login_button_value(
-    base_url: str, login_value: str
+    base_url: str, login_value: str, submit_markup: str
 ) -> None:
-    """The fallback must submit the localized value expected by the portal."""
+    """Browser login should establish a session and submit its localized button."""
     session = MagicMock()
-    session.__aenter__ = AsyncMock(return_value=session)
-    session.__aexit__ = AsyncMock(return_value=False)
     session.get = MagicMock(
-        return_value=DummyResponse(
-            status=200,
-            body=(f'<input type="submit" name="Login" value="{login_value}">'),
-        )
+        side_effect=[
+            DummyResponse(
+                status=200,
+                body=submit_markup.format(login_value=login_value),
+            ),
+            DummyResponse(status=200),
+            DummyResponse(status=404),
+        ]
     )
     session.post = MagicMock(
         return_value=DummyResponse(status=302, headers={"Location": "/Overview"})
     )
     session.cookie_jar.filter_cookies.return_value = {
-        "PHPSESSID": MagicMock(value="sess-123"),
-        "SERVERID": MagicMock(value="server-456"),
+        "PHPSESSID": MagicMock(key="PHPSESSID", value="sess-123"),
+        "SERVERID": MagicMock(key="SERVERID", value="server-456"),
     }
-    api_session = MagicMock()
-    api_session.get = MagicMock(return_value=DummyResponse(status=200))
 
     client = EvcNetApiClient(
         base_url,
         "user@example.com",
         "secret",
-        api_session,
+        session,
     )
-    setattr(client, "_standard_login", AsyncMock(return_value=False))
 
-    with patch(
-        "custom_components.evcnet.api.aiohttp.ClientSession", return_value=session
-    ):
-        assert await client.authenticate() is True
+    assert await client.authenticate() is True
     assert client.is_authenticated is True
 
     form_fields = session.post.call_args.kwargs["data"]._fields
@@ -148,6 +151,8 @@ async def test_browser_emulation_uses_portal_login_button_value(
         field for field in form_fields if field[0].get("name") == "Login"
     )
     assert login_field[2] == login_value
+    assert session.get.call_args_list[0].args[0] == (f"{base_url}/Login/Login")
+    assert session.post.call_args.args[0] == f"{base_url}/Login/Login"
 
 
 @pytest.mark.asyncio
@@ -165,11 +170,14 @@ async def test_authenticate_detects_otp_after_dashboard_redirect() -> None:
         "SERVERID": MagicMock(key="SERVERID", value="server-456"),
     }
     session.get = MagicMock(
-        return_value=DummyResponse(
-            status=302,
-            headers={"Location": "/2fa"},
-            body='<input type="hidden" name="_token" value="token-123">',
-        )
+        side_effect=[
+            DummyResponse(status=200),
+            DummyResponse(status=302, headers={"Location": "/2fa"}),
+            DummyResponse(
+                status=200,
+                body='<input type="hidden" name="_token" value="token-123">',
+            ),
+        ]
     )
 
     client = EvcNetApiClient(
@@ -180,6 +188,10 @@ async def test_authenticate_detects_otp_after_dashboard_redirect() -> None:
         await client.authenticate()
 
     assert object.__getattribute__(client, "_token") == "token-123"
+    assert session.get.call_args_list[0].args[0] == "https://example.com/Login/Login"
+    fields = session.post.call_args.kwargs["data"]._fields
+    login_field = next(field for field in fields if field[0].get("name") == "Login")
+    assert login_field[2] == "Log in"
 
 
 @pytest.mark.asyncio
@@ -201,6 +213,7 @@ async def test_authenticate_detects_otp_form_after_unmarked_dashboard_redirect()
     session.get = MagicMock(
         side_effect=[
             DummyResponse(status=200),
+            DummyResponse(status=200),
             DummyResponse(
                 status=200,
                 body=(
@@ -221,8 +234,8 @@ async def test_authenticate_detects_otp_form_after_unmarked_dashboard_redirect()
         await client.authenticate()
 
     assert object.__getattribute__(client, "_token") == "token-123"
-    assert session.get.call_args_list[1].args[0] == "https://example.com/2fa"
-    assert session.get.call_args_list[1].kwargs["cookies"] == {
+    assert session.get.call_args_list[2].args[0] == "https://example.com/2fa"
+    assert session.get.call_args_list[2].kwargs["cookies"] == {
         "PHPSESSID": "sess-123",
         "SERVERID": "server-456",
     }
