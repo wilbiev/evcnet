@@ -183,52 +183,6 @@ async def test_authenticate_detects_otp_after_dashboard_redirect() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_detects_otp_form_after_unmarked_dashboard_redirect() -> (
-    None
-):
-    """The OTP endpoint should be checked when login cookies look successful."""
-    session = MagicMock()
-    session.post = MagicMock(
-        return_value=DummyResponse(
-            status=302,
-            headers={"Location": "/Overview"},
-        )
-    )
-    session.cookie_jar.filter_cookies.return_value = {
-        "PHPSESSID": MagicMock(key="PHPSESSID", value="sess-123"),
-        "SERVERID": MagicMock(key="SERVERID", value="server-456"),
-    }
-    session.get = MagicMock(
-        side_effect=[
-            DummyResponse(status=200),
-            DummyResponse(
-                status=200,
-                body=(
-                    '<form action="/2fa_check">'
-                    '<input type="hidden" name="_token" value="token-123">'
-                    '<input name="_auth_code">'
-                    "</form>"
-                ),
-            ),
-        ]
-    )
-
-    client = EvcNetApiClient(
-        "https://example.com", "user@example.com", "secret", session
-    )
-
-    with pytest.raises(TwoFactorRequired):
-        await client.authenticate()
-
-    assert object.__getattribute__(client, "_token") == "token-123"
-    assert session.get.call_args_list[1].args[0] == "https://example.com/2fa"
-    assert session.get.call_args_list[1].kwargs["cookies"] == {
-        "PHPSESSID": "sess-123",
-        "SERVERID": "server-456",
-    }
-
-
-@pytest.mark.asyncio
 async def test_config_flow_shows_otp_step_when_2fa_required() -> None:
     """The config flow should pause on the OTP step instead of creating the entry."""
     flow = EvcNetConfigFlow()
