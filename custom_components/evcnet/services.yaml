@@ -34,3 +34,10 @@ start_charging:
             - "10"
           custom_value: true
           mode: dropdown
+    allow_missing_customer_id:
+      name: "Allow missing customer ID"
+      description: "Allow starting the session without a customer ID."
+      required: false
+      default: false
+      selector:
+        boolean:

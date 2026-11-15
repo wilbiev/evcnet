@@ -108,6 +108,7 @@ def setup_services(hass: HomeAssistant) -> None:
         entity_ids = call.data.get("entity_id", [])
         card_id_override = call.data.get("card_id")
         channel_id_override = call.data.get("channel_id")
+        allow_missing_customer_id = call.data.get("allow_missing_customer_id") is True
 
         registry = er.async_get(hass)
         for entity_id in entity_ids:
@@ -115,7 +116,7 @@ def setup_services(hass: HomeAssistant) -> None:
             if not entity_entry or not entity_entry.config_entry_id:
                 continue
 
-            # Haal de entry op via de registry
+            # Get the entry from the registry
             entry: EvcNetConfigEntry | None = hass.config_entries.async_get_entry(
                 entity_entry.config_entry_id
             )
@@ -123,17 +124,21 @@ def setup_services(hass: HomeAssistant) -> None:
                 continue
 
             coordinator = entry.runtime_data.coordinator
-            # Get spot_id from unique_id (bijv. "12345_charging_switch")
+            # Get spot_id from unique_id (e.g. "12345_charging_switch")
             spot_id = entity_entry.unique_id.split("_")[0]
             spot_data = coordinator.data.get(spot_id)
 
             if spot_data:
-                # Prioriteit: 1. Service call card_id, 2. Geselecteerde kaart in UI
+                # Priority: 1. Service call card_id, 2. Selected card in UI
                 card_id = card_id_override or spot_data.selected_card_id
-                customer_id = spot_data.customer_id
+                customer_id = spot_data.customer_id or ""
                 channel_id = channel_id_override or spot_data.selected_channel_id
 
-                if card_id and channel_id and customer_id:
+                if (
+                    card_id
+                    and channel_id
+                    and (customer_id or allow_missing_customer_id)
+                ):
                     try:
                         await coordinator.client.start_charging(
                             spot_id, customer_id, card_id, channel_id

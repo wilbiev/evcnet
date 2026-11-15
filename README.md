@@ -97,7 +97,10 @@ target:
 data:
   card_id: "ABC12DEF34" # Your RFID card ID
   channel_id: "1" # Your channel ID
+  allow_missing_customer_id: true # Only enable if your provider does not supply a customer ID
 ```
+
+`allow_missing_customer_id` is opt-in and defaults to `false`. The action still requires a card and channel. The charging switch continues to require a customer ID.
 
 ## Tip & tricks
 

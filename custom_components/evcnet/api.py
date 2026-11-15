@@ -544,7 +544,11 @@ class EvcNetApiClient:
         return await self._make_ajax_request(requests_payload)
 
     async def start_charging(
-        self, recharge_spot_id: str, customer_id: str, card_id: str, channel: str
+        self,
+        recharge_spot_id: str,
+        customer_id: str,
+        card_id: str,
+        channel: str,
     ) -> dict[str, Any]:
         """Start a charging session."""
         requests_payload = {
