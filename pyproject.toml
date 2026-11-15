@@ -1,6 +1,6 @@
 [project]
-name = "tuyahombli"
-version = "2026.01.0"
+name = "evcnet"
+version = "1.1.9"
 requires-python = ">=3.13"
 
 [tool.ruff]
