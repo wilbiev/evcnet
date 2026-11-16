@@ -1,4 +1,19 @@
 {
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reimbursement tariff",
+        "description": "Enabling the optional mobile API sends your saved account email and password to the HTTPS endpoint entered here. Only use a provider endpoint you trust. Portal 2FA is unchanged. VAT must be confirmed by your reimbursement statement; these options apply to all chargers in this account.",
+        "data": {
+          "mobile_reimbursement_enabled": "Enable 50five mobile reimbursement API",
+          "mobile_reimbursement_endpoint": "Trusted mobile GraphQL endpoint",
+          "reimbursement_vat_enabled": "Apply a confirmed reimbursement VAT percentage",
+          "reimbursement_vat_percent": "Reimbursement VAT (%)"
+        }
+      }
+    },
+    "error": {"invalid_mobile_endpoint": "Enter an HTTPS URL ending in /graphql, without credentials, query or fragment."}
+  },
   "config": {
     "step": {
       "user": {
@@ -78,6 +93,9 @@
       }
     },
     "sensor": {
+      "reimbursement_tariff_excl_vat": {"name": "Reimbursement Tariff (excl. VAT)"},
+      "reimbursement_tariff_incl_vat": {"name": "Reimbursement Tariff (incl. VAT)"},
+      "vat_rate": {"name": "VAT Rate"},
       "connector": {
         "name": "Connector"
       },

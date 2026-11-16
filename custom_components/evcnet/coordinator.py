@@ -1,6 +1,6 @@
 """DataUpdateCoordinator for EVC-net."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
@@ -22,6 +22,13 @@ from .const import (
     KEY_TEXT,
     LOG_ROW_LIMIT,
     EvcNetException,
+)
+from .reimbursement import (
+    REFRESH_SECONDS,
+    MobileReimbursementClient,
+    ReimbursementData,
+    ReimbursementError,
+    tariff_number,
 )
 from .utils import get_total_energy_usage_kwh
 
@@ -45,6 +52,8 @@ class EvcSpotData:
     selected_channel_id: str = "1"
     available_channels: dict[int, str] = field(default_factory=dict)
     logging: list[dict[str, Any]] = field(default_factory=list)
+    reimbursement: ReimbursementData = field(default_factory=ReimbursementData)
+    reimbursement_vat_percent: float | None = None
 
 
 class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
@@ -56,6 +65,8 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
         client: EvcNetApiClient,
         selected_card_ids: dict[str, str] | None = None,
         selected_channel_ids: dict[str, str] | None = None,
+        reimbursement_client: MobileReimbursementClient | None = None,
+        reimbursement_vat_percent: float | None = None,
     ) -> None:
         """Initialize coordinator."""
         super().__init__(
@@ -65,6 +76,10 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
         self.client = client
+        self._reimbursement_client = reimbursement_client
+        self._reimbursement_vat_percent = reimbursement_vat_percent
+        self._reimbursement_cache: dict[str, tuple[datetime, ReimbursementData]] = {}
+        self._spots_updated: datetime | None = None
         self.charge_spots: list[dict[str, Any]] = []
         self._selected_card_ids = dict(selected_card_ids or {})
         self._selected_channel_ids = dict(selected_channel_ids or {})
@@ -117,12 +132,19 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
 
     async def _async_fetch_charge_spots(self) -> None:
         """Fetch and store the list of charging spots."""
-        if self.charge_spots:
+        if (
+            self.charge_spots
+            and self._spots_updated is not None
+            and (dt_util.utcnow() - self._spots_updated).total_seconds()
+            < REFRESH_SECONDS
+        ):
             return
 
         spots_response = cast(
             list[list[dict[str, Any]]], await self.client.get_charge_spots()
         )
+        self.charge_spots = []
+        self._spots_updated = dt_util.utcnow()
         _LOGGER.debug("Raw charge spots response: %s", spots_response)
 
         if isinstance(spots_response, list) and len(spots_response) > 0:
@@ -264,6 +286,7 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 else:
                     _, logging_data = logging_cache
 
+            reimbursement = await self._async_get_reimbursement(spot, spot_id)
             return EvcSpotData(
                 info=spot,
                 status=status,
@@ -274,6 +297,8 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 available_channels=available_channels,
                 selected_channel_id=str(selected_channel_id),
                 logging=logging_data,
+                reimbursement=reimbursement,
+                reimbursement_vat_percent=self._reimbursement_vat_percent,
             )
 
         except EvcNetException as err:
@@ -282,8 +307,9 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 spot_id,
                 err,
             )
-            if spot_id in self.data:
-                return self.data[spot_id]
+            if self.data and spot_id in self.data:
+                self._reimbursement_cache.pop(spot_id, None)
+                return replace(self.data[spot_id], reimbursement=ReimbursementData())
             return EvcSpotData(
                 info=spot,
                 status={},
@@ -294,6 +320,37 @@ class EvcNetCoordinator(DataUpdateCoordinator[dict[str, EvcSpotData]]):
                 selected_channel_id="",
                 logging=[],
             )
+
+    async def _async_get_reimbursement(
+        self, spot: dict[str, Any], spot_id: str
+    ) -> ReimbursementData:
+        """Refresh optional prices independently; never break portal/2FA control."""
+        now = dt_util.utcnow()
+        cached = self._reimbursement_cache.get(spot_id)
+        if cached and (now - cached[0]).total_seconds() < REFRESH_SECONDS:
+            return cached[1]
+        result = ReimbursementData()
+        if self._reimbursement_client is not None:
+            try:
+                tariff = await self._reimbursement_client.get_tariff(str(spot_id))
+                result = ReimbursementData(tariff, "mobile_hcc", now)
+            except ReimbursementError:
+                _LOGGER.warning(
+                    "Optional reimbursement source unavailable; charger control remains active"
+                )
+        if (
+            result.tariff is None
+            and self._spots_updated is not None
+            and (now - self._spots_updated).total_seconds() < REFRESH_SECONDS
+        ):
+            # Generic TARIFF can be a charging fee, not a reimbursement: never use it.
+            tariff = tariff_number(spot.get("REIMBURSEMENT_TARIFF"))
+            if tariff is not None:
+                result = ReimbursementData(
+                    tariff, "portal_reimbursement", self._spots_updated
+                )
+        self._reimbursement_cache[spot_id] = (now, result)
+        return result
 
     async def _async_process_customer_and_cards(
         self,

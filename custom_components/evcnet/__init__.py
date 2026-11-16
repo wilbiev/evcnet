@@ -1,7 +1,10 @@
 """The EVC-net integration."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
+from typing import Any
+
+import aiohttp
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
@@ -9,15 +12,22 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import (
     CONF_BASE_URL,
+    CONF_MOBILE_ENDPOINT,
+    CONF_MOBILE_REIMBURSEMENT,
+    CONF_REIMBURSEMENT_VAT,
+    CONF_REIMBURSEMENT_VAT_ENABLED,
     CONF_SELECTED_CARD_IDS,
     CONF_SELECTED_CHANNEL_IDS,
     DOMAIN,
+    REIMBURSEMENT_OPTIONS,
     EvcNetException,
 )
 from .coordinator import EvcNetCoordinator
+from .reimbursement import MobileReimbursementClient, valid_endpoint
 from .session import create_client
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +45,8 @@ class EvcNetData:
     """Define an object to hold EVC-net data."""
 
     coordinator: EvcNetCoordinator
+    reimbursement_options: dict[str, Any] = field(default_factory=dict)
+    mobile_session: aiohttp.ClientSession | None = None
 
 
 type EvcNetConfigEntry = ConfigEntry[EvcNetData]
@@ -71,6 +83,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
 
     selected_card_ids = entry.options.get(CONF_SELECTED_CARD_IDS, {})
     selected_channel_ids = entry.options.get(CONF_SELECTED_CHANNEL_IDS, {})
+    mobile_client = None
+    mobile_session = None
+    endpoint = entry.options.get(CONF_MOBILE_ENDPOINT, "")
+    if entry.options.get(CONF_MOBILE_REIMBURSEMENT) and valid_endpoint(endpoint):
+        mobile_session = async_create_clientsession(
+            hass, cookie_jar=aiohttp.DummyCookieJar()
+        )
+        mobile_client = MobileReimbursementClient(
+            endpoint,
+            entry.data[CONF_USERNAME],
+            entry.data[CONF_PASSWORD],
+            mobile_session,
+        )
+    vat = (
+        entry.options.get(CONF_REIMBURSEMENT_VAT)
+        if entry.options.get(CONF_REIMBURSEMENT_VAT_ENABLED)
+        else None
+    )
     coordinator = EvcNetCoordinator(
         hass,
         client,
@@ -80,14 +110,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
         selected_channel_ids=(
             selected_channel_ids if isinstance(selected_channel_ids, dict) else {}
         ),
+        reimbursement_client=mobile_client,
+        reimbursement_vat_percent=vat,
     )
 
+    refresh_succeeded = False
     try:
         await coordinator.async_config_entry_first_refresh()
+        refresh_succeeded = True
     except EvcNetException as err:
         raise ConfigEntryNotReady(f"Connection with EVC-net failed: {err}") from err
+    finally:
+        if not refresh_succeeded and mobile_session is not None:
+            await mobile_session.close()
 
-    entry.runtime_data = EvcNetData(coordinator=coordinator)
+    entry.runtime_data = EvcNetData(
+        coordinator=coordinator,
+        reimbursement_options={
+            key: entry.options.get(key) for key in REIMBURSEMENT_OPTIONS
+        },
+        mobile_session=mobile_session,
+    )
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     # Register the services (only the first time the integration is set up)
     setup_services(hass)
@@ -96,6 +140,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def async_update_options(hass: HomeAssistant, entry: EvcNetConfigEntry) -> None:
+    """Reload tariff options only, not every persisted RFID/channel selection."""
+    current = {key: entry.options.get(key) for key in REIMBURSEMENT_OPTIONS}
+    if current != entry.runtime_data.reimbursement_options:
+        await hass.config_entries.async_reload(entry.entry_id)
 
 
 def setup_services(hass: HomeAssistant) -> None:
@@ -168,4 +219,7 @@ def setup_services(hass: HomeAssistant) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded and entry.runtime_data.mobile_session is not None:
+        await entry.runtime_data.mobile_session.close()
+    return unloaded

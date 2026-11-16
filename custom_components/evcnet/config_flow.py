@@ -7,9 +7,19 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 
 from .api import AuthenticationError, EvcNetApiClient, InvalidOtp, TwoFactorRequired
-from .const import CONF_BASE_URL, DEFAULT_BASE_URL, DOMAIN
+from .const import (
+    CONF_BASE_URL,
+    CONF_MOBILE_ENDPOINT,
+    CONF_MOBILE_REIMBURSEMENT,
+    CONF_REIMBURSEMENT_VAT,
+    CONF_REIMBURSEMENT_VAT_ENABLED,
+    DEFAULT_BASE_URL,
+    DOMAIN,
+)
+from .reimbursement import valid_endpoint
 from .session import create_client
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +40,14 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for EVC-net."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Configure optional reimbursement sources without altering portal login."""
+        return EvcNetOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize config flow state for optional 2FA challenge handling."""
@@ -194,3 +212,47 @@ class EvcNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle reconfiguration if the password or URL changes."""
         return await self.async_step_user(user_input)
+
+
+class EvcNetOptionsFlow(config_entries.OptionsFlow):
+    """Explicit consent before sending credentials to a mobile API endpoint."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Configure reimbursement and preserve persisted card/channel options."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get(CONF_MOBILE_REIMBURSEMENT) and not valid_endpoint(
+                user_input.get(CONF_MOBILE_ENDPOINT, "")
+            ):
+                errors[CONF_MOBILE_ENDPOINT] = "invalid_mobile_endpoint"
+            else:
+                return self.async_create_entry(
+                    title="", data={**self.config_entry.options, **user_input}
+                )
+        options = user_input if user_input is not None else self.config_entry.options
+        return self.async_show_form(
+            step_id="init",
+            errors=errors,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MOBILE_REIMBURSEMENT,
+                        default=options.get(CONF_MOBILE_REIMBURSEMENT, False),
+                    ): bool,
+                    vol.Optional(
+                        CONF_MOBILE_ENDPOINT,
+                        default=options.get(CONF_MOBILE_ENDPOINT, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_REIMBURSEMENT_VAT_ENABLED,
+                        default=options.get(CONF_REIMBURSEMENT_VAT_ENABLED, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_REIMBURSEMENT_VAT,
+                        default=options.get(CONF_REIMBURSEMENT_VAT, 0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+                }
+            ),
+        )

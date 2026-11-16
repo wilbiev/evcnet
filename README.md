@@ -50,6 +50,16 @@ From version 1.1.4 onwards two factor authentication with OTP is supported.
    - **Email**: Your EVC-net account email
    - **Password**: Your EVC-net account password
 
+### Options: reimbursement tariff (optional)
+
+Under **Configure** on the integration entry you can optionally set up a home charging reimbursement tariff:
+
+- **Enable 50five mobile reimbursement API**: Fetches the home charging compensation (HCC) tariff via the 50five mobile GraphQL API. This sends your saved email and password to the endpoint you enter, so only enable it for an endpoint you trust. Portal login/2FA is not affected; if the mobile source fails, charger control keeps working.
+- **Trusted mobile GraphQL endpoint**: HTTPS URL ending in `/graphql` (no credentials, query or fragment).
+- **Apply a confirmed reimbursement VAT percentage** / **Reimbursement VAT (%)**: Used for the incl. VAT sensor. Confirm the rate against your reimbursement statement.
+
+Without the mobile API, the tariff falls back to the portal's `REIMBURSEMENT_TARIFF` field when present. The generic `TARIFF` field is never used, as it can be a charging fee rather than a reimbursement. Tariffs refresh every 15 minutes.
+
 ## Available Entities
 
 For each charging station, the integration creates:
@@ -76,6 +86,9 @@ For each charging station, the integration creates:
 - **Session Time**: Duration of current charging session in hours
 - **Status Code**: Raw status code from the charging station
 - **Total Energy**: Total energy consumed (kWh)
+- **Reimbursement Tariff (excl. VAT)** (diagnostic): Reimbursement tariff in €/kWh, with attributes `tariff_source` and `last_successful_update`.
+- **Reimbursement Tariff (incl. VAT)** (diagnostic): Tariff including the configured VAT; unknown when no VAT is configured.
+- **VAT Rate** (diagnostic): The configured reimbursement VAT percentage.
 - **Last Logging Update**: shows when the logging was updated. Contains attribute **entries** with 50 logging entries per channel. Can be converted to markdown in the dashboard to show a list.
 
 ### Switch
