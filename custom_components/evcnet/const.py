@@ -8,13 +8,9 @@ CONF_SELECTED_CARD_IDS = "selected_card_ids"
 CONF_SELECTED_CHANNEL_IDS = "selected_channel_ids"
 CONF_MOBILE_REIMBURSEMENT = "mobile_reimbursement_enabled"
 CONF_MOBILE_ENDPOINT = "mobile_reimbursement_endpoint"
-CONF_REIMBURSEMENT_VAT = "reimbursement_vat_percent"
-CONF_REIMBURSEMENT_VAT_ENABLED = "reimbursement_vat_enabled"
 REIMBURSEMENT_OPTIONS = (
     CONF_MOBILE_REIMBURSEMENT,
     CONF_MOBILE_ENDPOINT,
-    CONF_REIMBURSEMENT_VAT,
-    CONF_REIMBURSEMENT_VAT_ENABLED,
 )
 
 # Default values

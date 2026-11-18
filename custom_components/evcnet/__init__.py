@@ -18,8 +18,6 @@ from .const import (
     CONF_BASE_URL,
     CONF_MOBILE_ENDPOINT,
     CONF_MOBILE_REIMBURSEMENT,
-    CONF_REIMBURSEMENT_VAT,
-    CONF_REIMBURSEMENT_VAT_ENABLED,
     CONF_SELECTED_CARD_IDS,
     CONF_SELECTED_CHANNEL_IDS,
     DOMAIN,
@@ -96,11 +94,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
             entry.data[CONF_PASSWORD],
             mobile_session,
         )
-    vat = (
-        entry.options.get(CONF_REIMBURSEMENT_VAT)
-        if entry.options.get(CONF_REIMBURSEMENT_VAT_ENABLED)
-        else None
-    )
     coordinator = EvcNetCoordinator(
         hass,
         client,
@@ -111,7 +104,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EvcNetConfigEntry) -> bo
             selected_channel_ids if isinstance(selected_channel_ids, dict) else {}
         ),
         reimbursement_client=mobile_client,
-        reimbursement_vat_percent=vat,
     )
 
     refresh_succeeded = False

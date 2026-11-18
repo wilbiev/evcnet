@@ -144,7 +144,6 @@ async def test_get_tariff_http_error_clears_token() -> None:
 def _coordinator(mobile: Any = None) -> EvcNetCoordinator:
     coordinator = object.__new__(EvcNetCoordinator)
     coordinator._reimbursement_client = mobile
-    coordinator._reimbursement_vat_percent = None
     coordinator._reimbursement_cache = {}
     coordinator._spots_updated = dt_util.utcnow()
     return coordinator

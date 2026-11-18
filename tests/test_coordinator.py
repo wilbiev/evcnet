@@ -23,7 +23,6 @@ def _bare_coordinator() -> EvcNetCoordinator:
     coordinator._energy_cache = {}
     coordinator._logging_cache = {}
     coordinator._reimbursement_client = None
-    coordinator._reimbursement_vat_percent = None
     coordinator._reimbursement_cache = {}
     coordinator._spots_updated = None
     return coordinator

@@ -13,7 +13,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     CURRENCY_EURO,
-    PERCENTAGE,
     EntityCategory,
     UnitOfEnergy,
     UnitOfPower,
@@ -52,43 +51,6 @@ SENSOR_TYPES: tuple[EvcNetSensorEntityDescription, ...] = (
         attributes_fn=lambda data: {
             "tariff_source": data.reimbursement.source,
             "last_successful_update": data.reimbursement.updated_at,
-        },
-    ),
-    EvcNetSensorEntityDescription(
-        key="reimbursement_tariff_incl_vat",
-        translation_key="reimbursement_tariff_incl_vat",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/kWh",
-        suggested_display_precision=4,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: (
-            round(
-                data.reimbursement.tariff * (1 + data.reimbursement_vat_percent / 100),
-                4,
-            )
-            if data.reimbursement.tariff is not None
-            and data.reimbursement_vat_percent is not None
-            else None
-        ),
-        attributes_fn=lambda data: {
-            "tariff_source": data.reimbursement.source,
-            "vat_source": "user_configured"
-            if data.reimbursement_vat_percent is not None
-            else "not_configured",
-            "last_successful_update": data.reimbursement.updated_at,
-        },
-    ),
-    EvcNetSensorEntityDescription(
-        key="vat_rate",
-        translation_key="vat_rate",
-        native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.reimbursement_vat_percent,
-        attributes_fn=lambda data: {
-            "vat_source": "user_configured_reimbursement"
-            if data.reimbursement_vat_percent is not None
-            else "not_configured"
         },
     ),
     EvcNetSensorEntityDescription(

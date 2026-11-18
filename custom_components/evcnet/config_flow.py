@@ -14,8 +14,6 @@ from .const import (
     CONF_BASE_URL,
     CONF_MOBILE_ENDPOINT,
     CONF_MOBILE_REIMBURSEMENT,
-    CONF_REIMBURSEMENT_VAT,
-    CONF_REIMBURSEMENT_VAT_ENABLED,
     DEFAULT_BASE_URL,
     DOMAIN,
 )
@@ -245,14 +243,6 @@ class EvcNetOptionsFlow(config_entries.OptionsFlow):
                         CONF_MOBILE_ENDPOINT,
                         default=options.get(CONF_MOBILE_ENDPOINT, ""),
                     ): str,
-                    vol.Required(
-                        CONF_REIMBURSEMENT_VAT_ENABLED,
-                        default=options.get(CONF_REIMBURSEMENT_VAT_ENABLED, False),
-                    ): bool,
-                    vol.Required(
-                        CONF_REIMBURSEMENT_VAT,
-                        default=options.get(CONF_REIMBURSEMENT_VAT, 0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
                 }
             ),
         )
