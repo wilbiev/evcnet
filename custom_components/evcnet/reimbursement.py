@@ -11,6 +11,9 @@ from yarl import URL
 
 from .utils import parse_locale_number
 
+# Client ID of the 50five mobile app, sent as the plugz-application-id header.
+# Same value as in nikagl/homeassistant-evcnet (MIT), where it is documented as
+# taken from the mobile app's JWT payload. Not an official public API ID.
 FIFTYFIVE_APPLICATION_ID = "dd6ee167-17d0-4bea-877d-9156bd5917dd"
 REFRESH_SECONDS = 900
 
