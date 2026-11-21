@@ -10,9 +10,9 @@ from custom_components.evcnet.api import EvcNetApiClient
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("customer_id", [None, "customer-1"])
-async def test_start_charging_sends_customer_id(customer_id: str | None) -> None:
-    """The API request includes a nullable customer ID."""
+@pytest.mark.parametrize("customer_id", ["", "customer-1"])
+async def test_start_charging_sends_customer_id(customer_id: str) -> None:
+    """The API request includes the provided customer ID string."""
     client = EvcNetApiClient(
         "https://example.com", "user@example.com", "secret", MagicMock()
     )
@@ -26,7 +26,7 @@ async def test_start_charging_sends_customer_id(customer_id: str | None) -> None
 
 
 def _start_charging_handler(
-    customer_id: str | None, card_id: str | None = "card-1"
+    customer_id: str, card_id: str | None = "card-1"
 ) -> tuple[object, AsyncMock, MagicMock]:
     """Register the service with a mocked charging spot and return its handler."""
     coordinator = MagicMock()
@@ -59,7 +59,7 @@ def _start_charging_handler(
 @pytest.mark.asyncio
 async def test_service_requires_customer_id_by_default() -> None:
     """The opt-in service option does not change the default validation."""
-    handler, start_charging, registry = _start_charging_handler(None)
+    handler, start_charging, registry = _start_charging_handler("")
     with (
         patch("custom_components.evcnet.er.async_get", return_value=registry),
         patch("custom_components.evcnet.persistent_notification.async_create"),
@@ -72,7 +72,7 @@ async def test_service_requires_customer_id_by_default() -> None:
 @pytest.mark.asyncio
 async def test_service_can_allow_missing_customer_id() -> None:
     """The service forwards a missing customer ID only when explicitly allowed."""
-    handler, start_charging, registry = _start_charging_handler(None)
+    handler, start_charging, registry = _start_charging_handler("")
     with patch("custom_components.evcnet.er.async_get", return_value=registry):
         await handler(
             SimpleNamespace(
@@ -83,12 +83,12 @@ async def test_service_can_allow_missing_customer_id() -> None:
             )
         )
 
-    start_charging.assert_awaited_once_with("spot-1", None, "card-1", "1")
+    start_charging.assert_awaited_once_with("spot-1", "", "card-1", "1")
 
 
 @pytest.mark.asyncio
-async def test_service_omits_customer_id_when_explicitly_allowed() -> None:
-    """The opt-in omits customer ID even when the spot has one."""
+async def test_service_uses_customer_id_when_available() -> None:
+    """The service keeps the spot's customer ID when one is available."""
     handler, start_charging, registry = _start_charging_handler("customer-1")
     with patch("custom_components.evcnet.er.async_get", return_value=registry):
         await handler(
@@ -100,13 +100,13 @@ async def test_service_omits_customer_id_when_explicitly_allowed() -> None:
             )
         )
 
-    start_charging.assert_awaited_once_with("spot-1", None, "card-1", "1")
+    start_charging.assert_awaited_once_with("spot-1", "customer-1", "card-1", "1")
 
 
 @pytest.mark.asyncio
 async def test_service_still_requires_card_without_customer_id() -> None:
     """Allowing a missing customer ID does not bypass the card requirement."""
-    handler, start_charging, registry = _start_charging_handler(None, card_id=None)
+    handler, start_charging, registry = _start_charging_handler("", card_id=None)
     with (
         patch("custom_components.evcnet.er.async_get", return_value=registry),
         patch("custom_components.evcnet.persistent_notification.async_create"),
